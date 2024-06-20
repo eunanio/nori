@@ -1,0 +1,6 @@
+tmp-nori*
+tmpdata/
+manifest.json
+compose.yml
+*.log
+*.tf.json
