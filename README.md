@@ -3,6 +3,10 @@ Nori allows you to package, distribute and deploy your Terraform modules. Nori c
 
 ![cli](assets/deploy-demo.gif)
 
+## Requirements
+- Go 1.21.5 or later
+- Terraform or OpenTofu 1.5.0 or later
+
 ## Getting Started
 To get started with Nori, you need to install the Nori CLI. You can install the CLI by running the following command:
 ```bash
