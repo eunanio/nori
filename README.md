@@ -67,5 +67,5 @@ The values file is a yaml or json file that contains the values that will be pas
 bucket_name: com.mycompany.storage.bucket
 tags: 
     Environment: dev
-    Owner: eunanhardy
+    Owner: Frontend
 ```
