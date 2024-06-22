@@ -53,7 +53,7 @@ func pullLayers(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag, cp st
 		sha := layer.Digest[7:]
 		layerPath := paths.GetBlobPath(tag.Name, tag.Version, sha)
 		if futils.FileExists(layerPath) {
-			fmt.Printf("%s: already exists\n", sha[:24])
+			fmt.Printf("%s: already exists\n", layer.Digest[:24])
 			continue
 		}
 		fmt.Printf("%s: Pulling\n", layer.Digest[:24])
@@ -82,7 +82,7 @@ func pullConfig(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag, cp st
 	sha := manifest.Config.Digest[7:]
 	configPath := paths.GetBlobPath(tag.Name, tag.Version, sha)
 	if futils.FileExists(configPath) {
-		fmt.Printf("%s: already exists\n", sha[:24])
+		fmt.Printf("%s: already exists\n", manifest.Config.Digest[:24])
 		configBytes, err := os.ReadFile(configPath)
 		if err != nil {
 			return nil, err

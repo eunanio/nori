@@ -28,17 +28,23 @@ Example of login to a AWS ECR registry:
 ```bash
 nori login --username AWS --password $(aws ecr get-login-password --region eu-west-1) 123456789012.dkr.ecr.eu-west-1.amazonaws.com
 ```
+### Plan
+To create a preview of your module deployment, run the following command:
+```bash
+nori plan 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1 --values ./values.yaml
+```
 
 ### Deploy
 To Deploy your Terraform module, run the following command:
 ```bash
 nori deploy 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1 --values ./values.yaml
 ```
-### Plan
-To create a preview of your module deployment, run the following command:
+
+Update an existing deployment by supplying the release id with updated values:
 ```bash
-nori plan 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1 --values ./values.yaml
+nori deploy 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1 --values ./values.yaml --release 01902d34-fdac-7874-bbdc-948ac43322bc
 ```
+
 ### Package
 To package your Terraform module provide a valid tag and path to your module directory , run the following command:
 ```bash
