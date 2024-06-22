@@ -73,5 +73,9 @@ func (m *Manifest) Marshal() ([]byte, error) {
 }
 
 func (t *Tag) String() string {
+	if t.Namespace != "" {
+		return t.Host + "/" + t.Namespace + "/" + t.Name + ":" + t.Version
+	}
+	
 	return t.Host + "/" + t.Name + ":" + t.Version
 }

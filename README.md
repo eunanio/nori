@@ -1,4 +1,4 @@
-## What is Nori?
+# Nori
 Nori allows you to package, distribute and deploy your Terraform modules. Nori creates oci compatible images that can be tagged and pushed to any container registry. such as AWS ECR, Github Packages or Docker Hub. With nori you can easily deploy any terraform module with a single command.
 
 ![cli](assets/deploy-demo.gif)
@@ -50,6 +50,3 @@ To pull your packaged module from a container registry, run the following comman
 ```bash
 nori pull 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1
 ```
-
-> [!NOTE]  
-> Nori is currently in pre-release and is not recommended for production use.

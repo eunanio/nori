@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/hclparse"
+	"github.com/eunanhardy/nori/internal/hcl"
 	"github.com/eunanhardy/nori/internal/paths"
 	"github.com/eunanhardy/nori/internal/spec"
 )
@@ -14,7 +14,7 @@ import (
 func PackageModule(packageTagFlag, packagePathFlag string) {
 	// Do Stuff Here
 	validatePackageFlags(packageTagFlag, packagePathFlag)
-	tag, err := futils.ParseImageTag(packageTagFlag)
+	tag, err := futils.ParseTagV2(packageTagFlag)
 	if err != nil {
 		fmt.Println("Error parsing tag: ", err)
 		return
@@ -33,7 +33,7 @@ func PackageModule(packageTagFlag, packagePathFlag string) {
 		fmt.Println("Error compressing directory: ", err)
 		return
 	}
-	moduleData, err := hclparse.ParseModuleConfig(packagePathFlag); if err != nil {
+	moduleData, err := hcl.ParseModuleConfig(packagePathFlag); if err != nil {
 		panic(err)
 	}
 	dirName := paths.GetBlobDir(tag.Name, tag.Version)
@@ -45,15 +45,11 @@ func PackageModule(packageTagFlag, packagePathFlag string) {
 		fmt.Println("Error generating manifest: ", err)
 		return
 	}
+
+	fmt.Println("Module packaged with tag: ", tag.String())
 }
 
 func generateManifest(digest, config spec.Digest, tag *spec.Tag) error {
-	var tagName string
-	if tag.Host == "" {
-		tagName = fmt.Sprintf("%s:%s", tag.Name, tag.Version)
-	} else {
-		tagName = fmt.Sprintf("%s/%s:%s", tag.Host, tag.Name, tag.Version)
-	} 
 
 	var manifest = spec.Manifest{
 		Schema:    2,
@@ -63,7 +59,7 @@ func generateManifest(digest, config spec.Digest, tag *spec.Tag) error {
 			digest,
 		},
 		Annotations: map[string]string{
-			spec.ANNO_IMAGE_REF_NAME: tagName,
+			spec.ANNO_IMAGE_REF_NAME: tag.String(),
 		},
 	}
 
@@ -87,7 +83,7 @@ func validatePackageFlags(packageFlag string, pathFlag string) {
 	}
 }
 
-func generateConfig(blobPath string, data *hclparse.ModuleConfig, tag *spec.Tag) (*spec.Digest,error){
+func generateConfig(blobPath string, data *hcl.ModuleConfig, tag *spec.Tag) (*spec.Digest,error){
 	var inputs = make(map[string]spec.ModuleInputs)
 	var outputs = make(map[string]spec.ModuleOutputs)
 	for _, value := range data.Inputs {

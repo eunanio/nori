@@ -20,7 +20,7 @@ var pushCmd = &cobra.Command{
 		}
 
 		tagStr := args[0]
-		tag, err := futils.ParseImageTag(tagStr); if err != nil {
+		tag, err := futils.ParseTagV2(tagStr); if err != nil {
 			panic("Error: Invalid tag")
 		}
 

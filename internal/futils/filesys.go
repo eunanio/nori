@@ -72,7 +72,7 @@ func WriteBlobContent(opts BlobWriter) error {
 	return nil
 }
 
-func ParseValuesFile(file string, config spec.Config) (values map[string]interface{}, err error) {
+func ParseValuesFile(file string, config *spec.Config) (values map[string]interface{}, err error) {
 
 	fileBytes, err := os.ReadFile(file); if err != nil {
 		return nil, fmt.Errorf("Error reading values file: "+ err.Error())

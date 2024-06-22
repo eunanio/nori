@@ -1,1 +1,4 @@
 bucket_name: "com.test.nori.dev"
+tags:
+  Name: "sample Bucket"
+  Env: "Dev"

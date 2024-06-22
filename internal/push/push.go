@@ -58,6 +58,7 @@ func pushConfig(cp string, digest spec.Digest, tag *spec.Tag, reg *oci.Registry,
 		Digest: digest,
 		File:   fileData,
 		Name:   tag.Name,
+		Tag:   	tag,
 		Insecure: insecure,
 	}
 	err = reg.PushBlob(*opts)
@@ -75,6 +76,7 @@ func pushLayers(cp string, layers []spec.Digest, tag *spec.Tag, reg *oci.Registr
 			Digest: layer,
 			File:   fileData,
 			Name:   tag.Name,
+			Tag:  	tag,
 			Insecure: insecure,
 		}
 

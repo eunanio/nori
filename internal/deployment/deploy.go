@@ -1,15 +1,13 @@
 package deployment
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 
 	"github.com/eunanhardy/nori/internal/backend"
 	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/hclparse"
-	"github.com/eunanhardy/nori/internal/oci"
+	"github.com/eunanhardy/nori/internal/hcl"
 	"github.com/eunanhardy/nori/internal/paths"
 	"github.com/eunanhardy/nori/internal/pull"
 	"github.com/eunanhardy/nori/internal/spec"
@@ -46,39 +44,16 @@ func Run(opts DeploymentOpts) error {
 	tmpDir := fmt.Sprintf("./%s", opts.ReleaseId)
 	paths.MkDirIfNotExist(tmpDir)
 
-	var config spec.Config
-	creds, err := oci.GetCredentials(opts.Tag.Host)
-	if err != nil {
-		return err
-	}
-	registry := oci.NewRegistry(opts.Tag.Host, creds)
-	manifest, err := registry.PullManifest(opts.Tag)
-	if err != nil {
-		return err
-	}
-
-	configOpts := oci.PullBlobOptions{
-		Digest: manifest.Config,
-		Name:   opts.Tag.Name,
-	}
-
-	configBlob, err := registry.PullBlob(configOpts)
-	if err != nil {
-		return err
-	}
-	err = json.Unmarshal(configBlob, &config)
-	if err != nil {
-		return err
-	}
+	_, config := pull.PullImage(opts.Tag, true,tmpDir)
 	values, err := futils.ParseValuesFile(opts.ValuesPath, config)
 	if err != nil {
 		return err
 	}
 
-	pull.PullImage(opts.Tag, true,tmpDir)
 	fmt.Println("Generating Workspace...")
-	hclparse.GenerateModuleBlock(opts.Tag.Name, tmpDir, values)
+	hcl.GenerateModuleBlock(opts.Tag.Name, tmpDir, values)
 	backend.GenerateBackendBlock(opts.ReleaseId)
+	hcl.GenerateOutputsBlock(opts.Tag.Name, tmpDir, config.Outputs)
 
 	switch(opts.ApplyType) {
 		case TYPE_PLAN:
@@ -88,20 +63,9 @@ func Run(opts DeploymentOpts) error {
 	}
 	if opts.ApplyType == TYPE_APPLY {
 		fmt.Println("Release ID: ", opts.ReleaseId)
-
-		// Working on outputs
-
-		// if len(config.Outputs) > 0 {
-		// 	fmt.Println("--- Outputs ---")
-		// 	tfOut, err := tf.Output(tmpDir)
-		// 	if err != nil {
-		// 		return fmt.Errorf("error getting outputs: %s", err.Error())
-		// 	}
-		// 	fmt.Println(tfOut)
-		// }
 	}
 
-	cleanup(tmpDir)
+	defer cleanup(tmpDir)
 	return nil
 }
 

@@ -61,12 +61,12 @@ func GetCredentials(url string) (string, error) {
 			return "", fmt.Errorf("error unmarshalling creds file: %s", err)
 		}
 	} else {
-		return "", fmt.Errorf("no credentials found for %s", url)
+		return "", fmt.Errorf("no credentials found")
 	}
 
 	if creds, ok := registryCreds.Credentials[url]; ok {
 		return creds, nil
 	} else {
-		return "", fmt.Errorf("no credentials found for %s", url)
+		return "", fmt.Errorf("no credentials found")
 	}
 }

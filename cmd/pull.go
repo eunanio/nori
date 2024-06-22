@@ -17,7 +17,7 @@ var pullCmd = &cobra.Command{
 			panic("Error: No tag provided")
 		}
 
-		tag, err := futils.ParseImageTag(tagInput)
+		tag, err := futils.ParseTagV2(tagInput)
 		e.Fatal(err, "Error: Invalid tag")
 		pull.PullImage(tag,pullCreateFlag,".")
 	},

@@ -1,6 +1,7 @@
 package pull
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -11,10 +12,10 @@ import (
 	"github.com/eunanhardy/nori/internal/spec"
 )
 
-func PullImage(tag *spec.Tag, export bool, ctxPath string) {
-	if tag.Host == "" {
-		panic("Error: Tag must be remote")
-	}
+func PullImage(tag *spec.Tag, export bool, ctxPath string) (*spec.Manifest, *spec.Config) {
+	// if tag.Host == "" {
+	// 	panic("Error: Tag must be remote")
+	// }
 	configPath := paths.GetOrCreateHomePath()
 	manifestPath := paths.GetManifestPath(tag.Name, tag.Version)
 	err := paths.MkDirIfNotExist(paths.GetBlobDir(tag.Name, tag.Version))
@@ -34,27 +35,32 @@ func PullImage(tag *spec.Tag, export bool, ctxPath string) {
 
 	os.WriteFile(manifestPath, manifestBytes, 0644)
 	pullLayers(reg, manifest, tag, configPath)
-	pullConfig(reg, manifest, tag, configPath)
+	config, err := pullConfig(reg, manifest, tag, configPath)
+	e.Fatal(err, "Error pulling config")
 
 	fmt.Println("Image pulled successfully")
 	if export {
 		fmt.Printf("Unpacking module into `%s/.nori/%s`...\n", ctxPath, tag.Name)
 		createAndExport(manifest, tag, configPath, ctxPath)
 	}
+
+	return manifest, config
 }
 
 func pullLayers(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag, cp string) {
+
 	for _, layer := range manifest.Layers {
 		sha := layer.Digest[7:]
 		layerPath := paths.GetBlobPath(tag.Name, tag.Version, sha)
 		if futils.FileExists(layerPath) {
-			fmt.Printf("%s: already exists\n", sha[:12])
+			fmt.Printf("%s: already exists\n", sha[:24])
 			continue
 		}
 		fmt.Printf("%s: Pulling\n", layer.Digest[:24])
 		pullOpts := oci.PullBlobOptions{
 			Name:   tag.Name,
 			Digest: layer,
+			Tag:   tag,
 		}
 
 		layerData, err := reg.PullBlob(pullOpts)
@@ -72,21 +78,34 @@ func pullLayers(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag, cp st
 	}
 }
 
-func pullConfig(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag, cp string) {
+func pullConfig(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag, cp string) (config *spec.Config, err error) {
 	sha := manifest.Config.Digest[7:]
 	configPath := paths.GetBlobPath(tag.Name, tag.Version, sha)
 	if futils.FileExists(configPath) {
 		fmt.Printf("%s: already exists\n", sha[:24])
-		return
+		configBytes, err := os.ReadFile(configPath)
+		if err != nil {
+			return nil, err
+		}
+		err = json.Unmarshal(configBytes, &config)
+		if err != nil {
+			return nil, err
+		}
+
+		return config, nil
 	}
 	fmt.Printf("%s: Pulling\n", manifest.Config.Digest[:24])
 	pullOpts := oci.PullBlobOptions{
 		Name:   tag.Name,
 		Digest: manifest.Config,
+		Tag:   tag,
 	}
 
 	configData, err := reg.PullBlob(pullOpts)
-	e.Resolve(err, "Error pulling config")
+	if err != nil {
+		return nil, err
+	}
+
 	blobOpts := futils.BlobWriter{
 		ConfigPath:  cp,
 		RepoName:    tag.Name,
@@ -96,7 +115,16 @@ func pullConfig(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag, cp st
 	}
 
 	err = futils.WriteBlobContent(blobOpts)
-	e.Fatal(err, "Error writing config")
+	if err != nil {
+		return nil, err
+	}
+
+	err = json.Unmarshal(configData, &config)
+	if err != nil {
+		return nil, err
+	}
+
+	return config, nil
 }
 
 func createAndExport(manifest *spec.Manifest, tag *spec.Tag, cp string, ctxPath string) {

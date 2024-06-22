@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
+	"github.com/eunanhardy/nori/internal/futils"
+	"github.com/eunanhardy/nori/internal/paths"
 	"github.com/eunanhardy/nori/internal/spec"
 )
 
@@ -15,11 +18,13 @@ type PushBlobOptions struct {
 	File   []byte
 	Name  string
 	Insecure bool
+	Tag *spec.Tag
 }
 
 type PullBlobOptions struct {
 	Digest spec.Digest
 	Name string
+	Tag *spec.Tag
 }
 
 type PushManifestOptions struct {
@@ -29,7 +34,30 @@ type PushManifestOptions struct {
 }
 
 func (r *Registry) PullManifest(tag *spec.Tag) (manifest *spec.Manifest, err error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("https://%s/v2/%s/manifests/%s", r.Url, tag.Name, tag.Version), nil)
+	
+	manifestPath := paths.GetManifestPath(tag.Name, tag.Version)
+	if futils.FileExists(manifestPath) {
+		manifestBytes, err := os.ReadFile(manifestPath)
+		if err != nil {
+			return nil, fmt.Errorf("error reading manifest: %s", err.Error())
+		}
+		err = json.Unmarshal(manifestBytes, &manifest)
+		if err != nil {
+			return nil, fmt.Errorf("error unmarshalling manifest: %s", err.Error())
+		}
+
+		fmt.Println("Using cached manifest")
+		return manifest, nil
+	}
+	
+	var endpoint string
+	if tag.Namespace != "" {
+		endpoint = fmt.Sprintf("https://%s/v2/%s/%s/manifests/%s", r.Url, tag.Namespace, tag.Name, tag.Version)
+	} else {
+		endpoint = fmt.Sprintf("https://%s/v2/%s/manifests/%s", r.Url, tag.Name, tag.Version)
+	}
+	
+	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %s", err.Error())
 	}
@@ -75,10 +103,14 @@ func (r *Registry) PushManifest(opts PushManifestOptions) (error) {
 	} else {
 		protocol = "https"
 	}
+	var endpoint string
+	if opts.Tag.Namespace != "" {
+		endpoint = fmt.Sprintf("%s://%s/v2/%s/%s/manifests/%s", protocol, r.Url, opts.Tag.Namespace, opts.Tag.Name, opts.Tag.Version)
+	} else {
+		endpoint = fmt.Sprintf("%s://%s/v2/%s/manifests/%s", protocol, r.Url, opts.Tag.Name, opts.Tag.Version)
+	}
 
-	endpopint := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", protocol, r.Url, opts.Tag.Name, opts.Tag.Version)
-
-	req, err := http.NewRequest("HEAD", endpopint, nil)
+	req, err := http.NewRequest("HEAD", endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("error creating request: %s", err.Error())
 	}
@@ -94,7 +126,7 @@ func (r *Registry) PushManifest(opts PushManifestOptions) (error) {
 	}
 
 	if resp.StatusCode != 200 {
-		uploadReq, err := http.NewRequest("PUT", endpopint, bytes.NewReader(jsonBytes))
+		uploadReq, err := http.NewRequest("PUT", endpoint, bytes.NewReader(jsonBytes))
 		if err != nil {
 			return fmt.Errorf("error creating request: %s", err.Error())
 		}
@@ -120,7 +152,14 @@ func (r *Registry) PushManifest(opts PushManifestOptions) (error) {
 }
 
 func (r *Registry) PullBlob(opts PullBlobOptions) (data []byte, err error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("https://%s/v2/%s/blobs/%s", r.Url, opts.Name, opts.Digest.Digest), nil)
+	var endpoint string
+	if opts.Tag.Namespace != "" {
+		endpoint = fmt.Sprintf("https://%s/v2/%s/%s/blobs/%s", r.Url, opts.Tag.Namespace, opts.Tag.Name, opts.Digest.Digest)
+	} else {
+		endpoint = fmt.Sprintf("https://%s/v2/%s/blobs/%s", r.Url, opts.Tag.Name, opts.Digest.Digest)
+	}
+
+	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %s", err.Error())
 	}
@@ -156,8 +195,15 @@ func (r *Registry) PushBlob(opts PushBlobOptions) error {
 		protocol = "https"
 	}
 
+	var endpoint string
+	if opts.Tag.Namespace != "" {
+		endpoint = fmt.Sprintf("%s://%s/v2/%s/%s/blobs/uploads/", protocol, r.Url, opts.Tag.Namespace, opts.Tag.Name)
+	} else {
+		endpoint = fmt.Sprintf("%s://%s/v2/%s/blobs/uploads/", protocol, r.Url, opts.Tag.Name)
+	}
+
 	// Initiate the upload session
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s://%s/v2/%s/blobs/uploads/", protocol,r.Url, opts.Name), nil)
+	req, err := http.NewRequest("POST", endpoint, nil)
 	if err != nil {
 		return err
 	}
