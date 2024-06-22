@@ -60,3 +60,12 @@ To pull your packaged module from a container registry, run the following comman
 ```bash
 nori pull 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1
 ```
+
+## The Values File
+The values file is a yaml or json file that contains the values that will be passed to your Terraform module. These values map to the variables in your terraform module. Here is an example of a values file:
+```yaml
+bucket_name: com.mycompany.storage.bucket
+tags: 
+    Environment: dev
+    Owner: eunanhardy
+```
