@@ -10,7 +10,8 @@ Nori allows you to package, distribute and deploy your Terraform modules. Nori c
 ## Getting Started
 To get started with Nori, you need to install the Nori CLI. You can install the CLI by running the following command:
 ```bash
-go install https://github.com/eunanhardy/nori@v0.0.1
+export PATH=$PATH:`go env GOPATH`/bin # Only needed if you havent set your GOPATH
+go install github.com/eunanhardy/nori@v0.0.1
 ```
 
 Setup your Nori configuration file by running the following command:
