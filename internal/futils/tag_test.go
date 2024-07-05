@@ -21,7 +21,7 @@ func TestTag(t *testing.T) {
 		}
 
 		for _, tt := range tests {
-			tag, err := ParseImageTag(tt.tag)
+			tag, err := ParseTagV2(tt.tag)
 			if tt.err {
 				if err == nil {
 					t.Errorf("expected error for tag %s, got nil", tag)

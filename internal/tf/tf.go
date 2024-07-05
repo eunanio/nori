@@ -30,14 +30,14 @@ func Plan(path string) (string, error) {
 		Run:  config.Runtime,
 		Args: []string{"plan"},
 	}
-	_,errOut, err := exe.ExecuteWithErr(init_opts)
+	out, err := exe.Execute(init_opts)
 	if err != nil {
-		return errOut, err
+		return out, err
 	}
 
-	out, errOut, err := exe.ExecuteWithErr(plan_opts)
+	out, err = exe.Execute(plan_opts)
 	if err != nil {
-		return errOut, err
+		return out, err
 	}
 	return out, nil
 }
@@ -60,12 +60,12 @@ func Apply(path string) (string, error) {
 		Run:  config.Runtime,
 		Args: []string{"apply", "-auto-approve", "-input=false"},
 	}
-	_, err := exe.Execute(init_opts)
+	out, err := exe.Execute(init_opts)
 	if err != nil {
-		return "", err
+		return out, err
 	}
 
-	out, err := exe.Execute(plan_opts)
+	out, err = exe.Execute(plan_opts)
 	if err != nil {
 		return out, err
 	}

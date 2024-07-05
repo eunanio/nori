@@ -6,19 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/eunanhardy/nori/internal/paths"
 	"github.com/eunanhardy/nori/internal/spec"
 	"gopkg.in/yaml.v2"
 )
 
-type BlobWriter struct {
-	ConfigPath string
-	RepoName string
-	RepoVersion string
-	Data []byte
-	Digest string
+type ModuleMap struct {
+	Modules map[string]string `json:"modules"`
 }
 
 func FileExists(filename string) bool {
@@ -36,40 +31,6 @@ func GetStdin() (msg string) {
       }
 	
       return msg
-}
-
-func LoadBlobContent(configPath string, digest string, tag *spec.Tag) ([]byte, error) {
-	sha := strings.Split(digest, ":")[1]
-	if sha == "" {
-		return nil, fmt.Errorf("invalid digest")
-	}
-
-	filePath := paths.GetBlobPath(tag.Name, tag.Version, sha)
-	if !FileExists(filePath) {
-		return nil, fmt.Errorf("file does not exist")
-	}
-
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-	
-	return data, nil
-}
-
-func WriteBlobContent(opts BlobWriter) error {
-	sha := strings.Split(opts.Digest, ":")[1]
-	if sha == "" {
-		return fmt.Errorf("invalid digest")
-	}
-
-	filePath := paths.GetBlobPath(opts.RepoName,opts.RepoVersion, sha)
-	err := os.WriteFile(filePath, opts.Data, 0644)
-	if err != nil {
-		return err
-	}
-	
-	return nil
 }
 
 func ParseValuesFile(file string, config *spec.Config) (values map[string]interface{}, err error) {
@@ -102,3 +63,89 @@ func ParseValuesFile(file string, config *spec.Config) (values map[string]interf
 
 	return values, nil
 }
+
+func CreateOrUpdateIndex(tag *spec.Tag, sha string) error {
+	sha = sha[7:]
+	var index ModuleMap
+	indexPath := paths.GetModuleMapPath()
+	if FileExists(indexPath) {
+		indexBytes, err := os.ReadFile(indexPath); if err != nil {
+			return err
+		}
+		err = json.Unmarshal(indexBytes, &index); if err != nil {
+			return err
+		}
+	}
+
+	if index.Modules == nil {
+		index.Modules = make(map[string]string)
+	}
+
+	if _, ok := index.Modules[tag.String()]; ok {
+		return nil
+	}
+
+	index.Modules[tag.String()] = sha
+	indexBytes, err := json.Marshal(index); if err != nil {
+		return err
+	}
+	os.WriteFile(indexPath, indexBytes, 0644)
+	return nil
+}
+
+func RemoveIndexEntry(tag *spec.Tag) error {
+	var index ModuleMap
+	indexPath := paths.GetModuleMapPath()
+	if FileExists(indexPath) {
+		indexBytes, err := os.ReadFile(indexPath); if err != nil {
+			return err
+		}
+		err = json.Unmarshal(indexBytes, &index); if err != nil {
+			return err
+		}
+	}
+
+	delete(index.Modules, tag.String())
+	indexBytes, err := json.Marshal(index); if err != nil {
+		return err
+	}
+	os.WriteFile(indexPath, indexBytes, 0644)
+	return nil
+}
+
+func GetTaggedManifest(tag *spec.Tag) (*spec.Manifest, error) {
+	var index ModuleMap
+	indexPath := paths.GetModuleMapPath()
+	if FileExists(indexPath) {
+		indexBytes, err := os.ReadFile(indexPath); if err != nil {
+			return nil, err
+		}
+		err = json.Unmarshal(indexBytes, &index); if err != nil {
+			return nil, err
+		}
+	}
+
+	if sha, ok := index.Modules[tag.String()]; ok {
+		manifestPath := paths.GetBlobPathV2(sha)
+		if FileExists(manifestPath) {
+			manifestBytes, err := os.ReadFile(manifestPath); if err != nil {
+				return nil, err
+			}
+			var manifest spec.Manifest
+			err = json.Unmarshal(manifestBytes, &manifest); if err != nil {
+				return nil, err
+			}
+			return &manifest, nil
+		}
+		
+		return nil, nil
+	}
+
+	return nil, nil
+}
+
+func IsDebug() bool {
+	_, ok := os.LookupEnv("NORI_DEBUG")
+	return ok
+}
+

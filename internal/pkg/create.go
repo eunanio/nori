@@ -7,56 +7,54 @@ import (
 
 	"github.com/eunanhardy/nori/internal/futils"
 	"github.com/eunanhardy/nori/internal/hcl"
-	"github.com/eunanhardy/nori/internal/paths"
 	"github.com/eunanhardy/nori/internal/spec"
 )
 
-func PackageModule(packageTagFlag, packagePathFlag string) {
-	// Do Stuff Here
-	validatePackageFlags(packageTagFlag, packagePathFlag)
-	tag, err := futils.ParseTagV2(packageTagFlag)
-	if err != nil {
-		fmt.Println("Error parsing tag: ", err)
-		return
-	}
-	//imagePath := fmt.Sprintf("%s/images/%s", homepath, tag.Name)
-	blobpath := paths.GetBlobDir(tag.Name, tag.Version)
-	err = paths.MkDirIfNotExist(blobpath)
-	if err != nil {
-		fmt.Println("Error creating blob directory: ", err)
-		return
+func PackageModuleV2(tag *spec.Tag, packagePathFlag string) error {
+	if packagePathFlag == "" {
+		fmt.Println("Path is required")
+		os.Exit(1)
 	}
 
-
-	moduleDigest, err := futils.CompressDir(packagePathFlag, blobpath, spec.MEDIA_TYPE_MODULE_PRIMARY,tag.Name)
-	if err != nil {
-		fmt.Println("Error compressing directory: ", err)
-		return
+	moduleCompressedData, err := futils.CompressModule(packagePathFlag, tag.Name); if err != nil {
+		return fmt.Errorf("error compressing module: %s", err)
 	}
+
+	mediaDigest, err := futils.WriteBlob(moduleCompressedData, tag, spec.MEDIA_TYPE_MODULE_PRIMARY)
+	if err != nil {
+		return fmt.Errorf("error packaging blob: %s", err)
+	}
+
 	moduleData, err := hcl.ParseModuleConfig(packagePathFlag); if err != nil {
-		panic(err)
-	}
-	dirName := paths.GetBlobDir(tag.Name, tag.Version)
-	configDigest,err := generateConfig(dirName,moduleData,tag); if err != nil {
-		fmt.Println("Error generating config: ", err)
+		return fmt.Errorf("error parsing module config: %s", err)
 	}
 
-	err = generateManifest(*moduleDigest,*configDigest, tag); if err != nil {
-		fmt.Println("Error generating manifest: ", err)
-		return
+	configDigest, err := generateConfig(moduleData, tag); if err != nil {
+		return fmt.Errorf("error generating config: %s", err)
+	}
+
+	manifestDigest, err := generateManifest(*mediaDigest, *configDigest, tag); if err != nil {
+		return fmt.Errorf("error generating manifest: %s", err)
+	}
+
+	err = futils.CreateOrUpdateIndex(tag,manifestDigest.Digest); if err != nil {
+		return fmt.Errorf("error creating or updating index: %s", err)
 	}
 
 	fmt.Println("Module packaged with tag: ", tag.String())
+
+
+	return nil
 }
 
-func generateManifest(digest, config spec.Digest, tag *spec.Tag) error {
+func generateManifest(layersDigest, config spec.Digest, tag *spec.Tag) (*spec.Digest,error) {
 
 	var manifest = spec.Manifest{
 		Schema:    2,
 		MediaType: spec.MEDIA_TYPE_MANIFEST,
 		Config:   config,
 		Layers: []spec.Digest{
-			digest,
+			layersDigest,
 		},
 		Annotations: map[string]string{
 			spec.ANNO_IMAGE_REF_NAME: tag.String(),
@@ -65,11 +63,15 @@ func generateManifest(digest, config spec.Digest, tag *spec.Tag) error {
 
 	jsonBytes, err := json.Marshal(manifest); if err != nil {
 		fmt.Println("Error marshalling manifest: ", err)
-		return err
+		return nil,err
 	}
-	manifestPath := paths.GetManifestPath(tag.Name, tag.Version)
-	os.WriteFile(manifestPath,jsonBytes,os.ModePerm)
-	return nil
+
+	digest, err := futils.WriteBlob(jsonBytes, tag, spec.MEDIA_TYPE_MANIFEST); if err != nil {
+		fmt.Println("Error writing manifest: ", err)
+		return nil,err
+	}
+
+	return digest,nil
 }
 
 func validatePackageFlags(packageFlag string, pathFlag string) {
@@ -83,7 +85,7 @@ func validatePackageFlags(packageFlag string, pathFlag string) {
 	}
 }
 
-func generateConfig(blobPath string, data *hcl.ModuleConfig, tag *spec.Tag) (*spec.Digest,error){
+func generateConfig(data *hcl.ModuleConfig, tag *spec.Tag) (*spec.Digest,error){
 	var inputs = make(map[string]spec.ModuleInputs)
 	var outputs = make(map[string]spec.ModuleOutputs)
 	for _, value := range data.Inputs {
@@ -117,10 +119,10 @@ func generateConfig(blobPath string, data *hcl.ModuleConfig, tag *spec.Tag) (*sp
 		return nil,err
 	}
 
-	emptyDigest,err := futils.WriteBlob(jsonBytes,blobPath,spec.MEDIA_TYPE_CONFIG); if err != nil {
+	digest,err := futils.WriteBlob(jsonBytes, tag,spec.MEDIA_TYPE_CONFIG); if err != nil {
 		fmt.Println("Error compressing empty json: ", err)
 		return nil,err
 	}
 	
-	return emptyDigest,nil
+	return digest,nil
 }
