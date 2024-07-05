@@ -10,136 +10,88 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/eunanhardy/nori/internal/paths"
 	"github.com/eunanhardy/nori/internal/spec"
 )
 
-func WriteBlob(data []byte, path string, mediaType string) (*spec.Digest, error){
+func WriteBlob(data []byte, tag *spec.Tag, mediaType string) (*spec.Digest, error){
 	hasher := sha256.New()
 	hasher.Write(data)
 	hash := hex.EncodeToString(hasher.Sum(nil))
 	fileSize := int64(len(data))
-	dstFile, err := os.Create(fmt.Sprintf("%s/%s", path, hash)); if err != nil {
-		return nil,err
+	blobDirPath := paths.GetBlobDirV2(hash)
+	blobPath := paths.GetBlobPathV2(hash)
+	paths.MkDirIfNotExist(blobDirPath)
+	err := os.WriteFile(blobPath, data, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("error writing blob: %s", err)
 	}
-	defer dstFile.Close()
 
-	dstFile.Write(data)
+	fmt.Printf("Writing: sha256:%s\n",hash)
 	return &spec.Digest{MediaType: mediaType,Size: fileSize, Digest: "sha256:"+hash},nil
 }
 
-func CompressBytes(data []byte, path string, mediaType string) (*spec.Digest, error) {
-	    // Create a bytes buffer from the data
-		src := bytes.NewBuffer(data)
-		dataSize := int64(len(data))
-
-		hasher := sha256.New()
-		hasher.Write(data)
-		hash := hex.EncodeToString(hasher.Sum(nil))
-		// Create the destination file and defer its closure
-		dstFile, err := os.Create(fmt.Sprintf("%s/%s", path, hash))
-		if err != nil {
-			return nil,err
-		}
-		defer dstFile.Close()
-	
-		tw := tar.NewWriter(dstFile)
-		defer tw.Close()
-	
-		header := &tar.Header{
-			Name: hash,
-			Size: dataSize,
-			Mode: 0600, // File permissions
-		}
-	
-		if err := tw.WriteHeader(header); err != nil {
-			return nil,err
-		}
-	
-		// Write the data to the tar writer
-		if _, err := io.Copy(tw, src); err != nil {
-			return nil,err
-		}
-	
-		return &spec.Digest{MediaType: mediaType,Size: dataSize, Digest: "sha256:"+hash},nil
+func LoadBlob(digest string) (data []byte, err error) {
+	sha := digest[7:]
+	blobPath := paths.GetBlobPathV2(sha)
+	if FileExists(blobPath) {
+		blobBytes, err := os.ReadFile(blobPath)
+		return blobBytes, err
+	}
+	return nil, fmt.Errorf("file not found")
 }
 
-func CompressDir(src string, tarPath string, mediaType string, name string) (*spec.Digest, error) {
-	// Open the source directory and defer its closure
-	dst := tarPath+"/module.layer.tar"
-	os.Create(dst)
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open source directory: %w", err)
-	}
-	defer srcFile.Close()
 
-	dstFile, err := os.Create(dst)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create destination file: %w", err)
-	}
-	defer dstFile.Close()
+// CompressDir compresses the given directory and returns the tar file as a byte array.
+func CompressModule(src string, name string) ([]byte, error) {
+    var buf bytes.Buffer
+    tw := tar.NewWriter(&buf)
 
-	tw := tar.NewWriter(dstFile)
-	//defer tw.Close()
+    err := filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
+        if err != nil {
+            return err
+        }
 
-	err = filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+        header, err := tar.FileInfoHeader(fi, fi.Name())
+        if err != nil {
+            return err
+        }
 
-		header, err := tar.FileInfoHeader(fi, fi.Name())
-		if err != nil {
-			return err
-		}
+        relativePath, err := filepath.Rel(src, file)
+        if err != nil {
+            return err
+        }
 
-		relativePath, err := filepath.Rel(src, file); if err != nil {
-			return err
-		}
+        header.Name = filepath.Join(name, relativePath)
 
-		header.Name = filepath.Join(name, relativePath)
+        if err := tw.WriteHeader(header); err != nil {
+            return err
+        }
 
-		// Write the header
-		if err := tw.WriteHeader(header); err != nil {
-			return err
-		}
+        if !fi.Mode().IsDir() {
+            data, err := os.Open(file)
+            if err != nil {
+                return err
+            }
+            defer data.Close()
 
-		if !fi.Mode().IsDir() {
-			data, err := os.Open(file)
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(tw, data); err != nil {
-				return err
-			}
-		}
+            if _, err := io.Copy(tw, data); err != nil {
+                return err
+            }
+        }
 
-		return nil
-	})
+        return nil
+    })
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to walk directory: %w", err)
-	}
+    if err != nil {
+        return nil, fmt.Errorf("failed to walk directory: %w", err)
+    }
 
-	tw.Close()
+    if err := tw.Close(); err != nil {
+        return nil, fmt.Errorf("failed to close tar writer: %w", err)
+    }
 
-	if _, err := dstFile.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("failed to seek destination file: %w", err)
-	}
-
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, dstFile); err != nil {
-		return nil, fmt.Errorf("failed to compute SHA-256 checksum: %w", err)
-	}
-	shaHash := hex.EncodeToString(hasher.Sum(nil))
-
-	fileInfo, err := dstFile.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get file info: %w", err)
-	}
-	fileSize := fileInfo.Size()
-
-	os.Rename(dst, fmt.Sprintf("%s/%s", tarPath, shaHash))
-	return &spec.Digest{MediaType: mediaType, Size: fileSize, Digest:"sha256:"+shaHash}, nil
+    return buf.Bytes(), nil
 }
 
 
@@ -186,27 +138,4 @@ func DecompressModule(tarBytes []byte, destPath string) error {
 	}
 
 	return nil
-}
-
-func GetFileSize(filePath string) (int64, error) {
-	fileInfo, err := os.Stat(filePath)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get file info: %w", err)
-	}
-
-	return fileInfo.Size(), nil
-}
-
-func HashZip(filepath string) (string, error) {
-	file, err := os.Open(filepath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return "", err
-	}
-
-	return hex.EncodeToString(hasher.Sum(nil)), nil
 }

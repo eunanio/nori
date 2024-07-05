@@ -1,14 +1,11 @@
 package push
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/eunanhardy/nori/internal/e"
 	"github.com/eunanhardy/nori/internal/futils"
 	"github.com/eunanhardy/nori/internal/oci"
-	"github.com/eunanhardy/nori/internal/paths"
 	"github.com/eunanhardy/nori/internal/spec"
 )
 
@@ -18,30 +15,19 @@ func PushImage(tag *spec.Tag, insecure bool) {
 		panic("Error: Invalid tag")
 	}
 
-	configPath := paths.GetOrCreateHomePath()
-	manifestPath := paths.GetManifestPath(tag.Name, tag.Version)
-	var manifest spec.Manifest
-	if !futils.FileExists(manifestPath) {
-		panic("Error: Manifest not found")
+	manifest, err := futils.GetTaggedManifest(tag)
+	if err != nil {
+		e.Fatal(err, "Error getting manifest")
 	}
 
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		panic("Error reading manifest: " + err.Error())
-	}
-
-	err = json.Unmarshal(data, &manifest)
-	if err != nil {
-		panic("Error unmarshalling manifest: " + err.Error())
-	}
 	creds, _ := oci.GetCredentials(tag.Host)
 
 	reg := oci.NewRegistry(tag.Host, creds)
 
-	err = pushLayers(configPath, manifest.Layers, tag, reg, insecure)
+	err = pushLayers(manifest.Layers, tag, reg, insecure)
 	e.Resolve(err, "Error pushing layers")
 
-	err = pushConfig(configPath, manifest.Config, tag, reg, insecure)
+	err = pushConfig(manifest.Config, tag, reg, insecure)
 	e.Resolve(err, "Error pushing config")
 
 	err = pushManifest(manifest, tag, reg, insecure)
@@ -50,8 +36,8 @@ func PushImage(tag *spec.Tag, insecure bool) {
 	fmt.Println("Image pushed successfully")
 }
 
-func pushConfig(cp string, digest spec.Digest, tag *spec.Tag, reg *oci.Registry, insecure bool) error {
-	fileData, err := futils.LoadBlobContent(cp, digest.Digest, tag)
+func pushConfig(digest spec.Digest, tag *spec.Tag, reg *oci.Registry, insecure bool) error {
+	fileData, err := futils.LoadBlob(digest.Digest)
 	e.Resolve(err, "Error loading config file")
 
 	opts := &oci.PushBlobOptions{
@@ -67,9 +53,9 @@ func pushConfig(cp string, digest spec.Digest, tag *spec.Tag, reg *oci.Registry,
 	return nil
 }
 
-func pushLayers(cp string, layers []spec.Digest, tag *spec.Tag, reg *oci.Registry, insecure bool) error {
+func pushLayers(layers []spec.Digest, tag *spec.Tag, reg *oci.Registry, insecure bool) error {
 	for _, layer := range layers {
-		fileData, err := futils.LoadBlobContent(cp, layer.Digest, tag)
+		fileData, err := futils.LoadBlob(layer.Digest)
 		e.Resolve(err, "Error loading layer file")
 
 		opts := &oci.PushBlobOptions{
@@ -88,7 +74,7 @@ func pushLayers(cp string, layers []spec.Digest, tag *spec.Tag, reg *oci.Registr
 	return nil
 }
 
-func pushManifest(manifest spec.Manifest, tag *spec.Tag, reg *oci.Registry, insecure bool) error {
+func pushManifest(manifest *spec.Manifest, tag *spec.Tag, reg *oci.Registry, insecure bool) error {
 	opts := &oci.PushManifestOptions{
 		Manifest: manifest,
 		Tag:      tag,
@@ -96,7 +82,9 @@ func pushManifest(manifest spec.Manifest, tag *spec.Tag, reg *oci.Registry, inse
 	}
 
 	err := reg.PushManifest(*opts)
-	e.Resolve(err, "Error pushing manifest")
+	if err != nil {
+		return fmt.Errorf("error pushing manifest: %s", err)
+	}
 
 	return nil
 }

@@ -31,6 +31,7 @@ var planCmd = &cobra.Command{
 			ValuesPath: valuesFileFlag,
 			ApplyType: deployment.TYPE_PLAN,
 			ReleaseId: releaseFlag,
+			ProviderFile: providerFileFlag,
 		}
 
 		err = deployment.Run(opts)

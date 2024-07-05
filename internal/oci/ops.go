@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 
 	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/paths"
 	"github.com/eunanhardy/nori/internal/spec"
 )
 
@@ -28,24 +26,17 @@ type PullBlobOptions struct {
 }
 
 type PushManifestOptions struct {
-	Manifest spec.Manifest
+	Manifest *spec.Manifest
 	Tag      *spec.Tag
 	Insecure bool
 }
 
 func (r *Registry) PullManifest(tag *spec.Tag) (manifest *spec.Manifest, err error) {
-	
-	manifestPath := paths.GetManifestPath(tag.Name, tag.Version)
-	if futils.FileExists(manifestPath) {
-		manifestBytes, err := os.ReadFile(manifestPath)
-		if err != nil {
-			return nil, fmt.Errorf("error reading manifest: %s", err.Error())
-		}
-		err = json.Unmarshal(manifestBytes, &manifest)
-		if err != nil {
-			return nil, fmt.Errorf("error unmarshalling manifest: %s", err.Error())
-		}
-
+	manifest, err = futils.GetTaggedManifest(tag)
+	if err != nil {
+		return nil, fmt.Errorf("error getting manifest sha: %s", err.Error())
+	}
+	if manifest != nil {
 		fmt.Println("Using cached manifest")
 		return manifest, nil
 	}
@@ -76,6 +67,10 @@ func (r *Registry) PullManifest(tag *spec.Tag) (manifest *spec.Manifest, err err
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil, fmt.Errorf("unauthorized, please use nori login to authenticate")
+		}
+
 		return nil, fmt.Errorf("cannot to pull manifest: %s", resp.Status)
 	}
 	manifestBytes, err := io.ReadAll(resp.Body)
@@ -143,7 +138,9 @@ func (r *Registry) PushManifest(opts PushManifestOptions) (error) {
 		}
 
 		if resp.StatusCode != 201 {
-			fmt.Println(resp.Body)
+			if resp.StatusCode == http.StatusUnauthorized {
+				return fmt.Errorf("unauthorized, please use nori login to authenticate")
+			}
 			return fmt.Errorf("failed to push manifest: %s", resp.Status)
 		}
 	}
@@ -175,6 +172,9 @@ func (r *Registry) PullBlob(opts PullBlobOptions) (data []byte, err error) {
 	}
 
 	if resp.StatusCode != 200 {
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil,fmt.Errorf("unauthorized, please use nori login to authenticate")
+		}
 		return nil, fmt.Errorf("failed to pull blob: %s", resp.Status)
 	}
 	defer resp.Body.Close()
@@ -244,9 +244,12 @@ func (r *Registry) PushBlob(opts PushBlobOptions) error {
 	}
 
 	if resp.StatusCode != 201 {
+		if resp.StatusCode == http.StatusUnauthorized {
+			return fmt.Errorf("unauthorized, please use nori login to authenticate")
+		}
 		return fmt.Errorf("failed to push blob: %s", resp.Status)
 	}
 
-	fmt.Printf("%s: pushed\n", opts.Digest.Digest[7:])
+	fmt.Printf("%s: pushed\n", opts.Digest.Digest[:24])
 	return nil
 }

@@ -67,6 +67,6 @@ func GetCredentials(url string) (string, error) {
 	if creds, ok := registryCreds.Credentials[url]; ok {
 		return creds, nil
 	} else {
-		return "", fmt.Errorf("no credentials found")
+		return "", nil
 	}
 }

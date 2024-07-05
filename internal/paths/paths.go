@@ -6,15 +6,16 @@ import (
 )
 
 const (
-	TLP_MANIFEST_PATH = "%s/images/%s/%s/manifest.json"
 	TLP_CREDS_PATH	  = "%s/credentials.json"
-	TLP_BLOB_PATH     = "%s/images/%s/%s/blobs/sha256"
-	TLP_BLOB_FILE     = "%s/images/%s/%s/blobs/sha256/%s"
+	TLP_BLOB_PATH_V2  = "%s/images/blobs/%s"
+	TLP_MAP_PATH	  = "%s/images/index.json"
+	TLP_BLOB_FILE     = "%s/images/blobs/%s/%s"
 	TLP_HOME_DIR      = "%s/.nori"
 	TLP_IMAGE_DIR     = "%s/images/%s/%s"
 	TLP_CONFIG_FILE   = "%s/config.json"
 	TLP_RELEASE_PATH  = "%s/releases/%s"
 )
+
 
 func GetOrCreateHomePath() string {
 	homeDir, err := os.UserHomeDir()
@@ -29,19 +30,16 @@ func GetOrCreateHomePath() string {
 	return configPath
 }
 
-func GetManifestPath(name, version string) string {
+func GetBlobDirV2(sha string) string {
 	homePath := GetOrCreateHomePath()
-	return fmt.Sprintf(TLP_MANIFEST_PATH, homePath, name, version)
+	shard1 := sha[:2]
+	return fmt.Sprintf(TLP_BLOB_PATH_V2, homePath, shard1)
 }
 
-func GetBlobPath(name, version, sha string) string {
+func GetBlobPathV2(sha string) string {
 	homePath := GetOrCreateHomePath()
-	return fmt.Sprintf(TLP_BLOB_FILE, homePath, name, version, sha)
-}
-
-func GetBlobDir(name, version string) string {
-	homePath := GetOrCreateHomePath()
-	return fmt.Sprintf(TLP_BLOB_PATH, homePath, name, version)
+	shard1 := sha[:2]
+	return fmt.Sprintf(TLP_BLOB_FILE, homePath, shard1, sha)
 }
 
 func GetImagePath(name, version string) string {
@@ -62,6 +60,11 @@ func GetConfigPath() string{
 func GetReleasePath(name string) string {
 	homePath := GetOrCreateHomePath()
 	return fmt.Sprintf(TLP_RELEASE_PATH, homePath, name)
+}
+
+func GetModuleMapPath() string {
+	homePath := GetOrCreateHomePath()
+	return fmt.Sprintf(TLP_MAP_PATH, homePath)
 }
 
 func MkDirIfNotExist(dir string) error {
