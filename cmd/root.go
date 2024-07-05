@@ -20,6 +20,7 @@ var (
 	insecureFlag bool
 	backendRegionFlag string
 	releaseFlag string
+	providerFileFlag string
 )
 
 var rootCmd = &cobra.Command{
@@ -64,8 +65,16 @@ func init() {
 	rootCmd.AddCommand(planCmd)
 	planCmd.Flags().StringVarP(&valuesFileFlag,"values", "v","","Values file for the deployment")
 	planCmd.Flags().StringVarP(&releaseFlag,"release", "r","","Release ID for the deployment")
+	planCmd.Flags().StringVarP(&providerFileFlag,"provider", "p","","Provider file for the deployment")
 	// Deploy
 	rootCmd.AddCommand(deployCmd)
 	deployCmd.Flags().StringVarP(&valuesFileFlag,"values", "v","","Values file for the deployment")
 	deployCmd.Flags().StringVarP(&releaseFlag,"release", "r","","Release ID for the deployment")
+	deployCmd.Flags().StringVarP(&providerFileFlag,"provider", "p","","Provider file for the deployment")
+
+	// Version
+	rootCmd.AddCommand(versionCmd)
+	// Tag
+	rootCmd.AddCommand(tagCmd)
+
 }

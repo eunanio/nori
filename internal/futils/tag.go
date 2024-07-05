@@ -1,53 +1,14 @@
 package futils
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
-	"strings"
 
+	"github.com/eunanhardy/nori/internal/paths"
 	"github.com/eunanhardy/nori/internal/spec"
 )
-
-
-
-func ParseImageTag(tag string) (*spec.Tag, error) {
-	var host, name, version string
-
-	if tag == "" {
-		return nil, fmt.Errorf("invalid tag: tag cannot be empty")
-	}
-
-	nameAndVersion := strings.Split(tag, ":")
-	
-	if len(nameAndVersion) > 2 {
-		version = nameAndVersion[2]
-		name = nameAndVersion[0] + ":" + nameAndVersion[1]
-	} else {
-		name = nameAndVersion[0]
-		if len(nameAndVersion) > 1 {
-			version = nameAndVersion[1]
-		} else {
-			version = "latest"
-		}
-	}
-
-	nameParts := strings.SplitN(name, "/", 2)
-
-	if len(nameParts) > 1 && (strings.Contains(nameParts[0], ".") || strings.Contains(nameParts[0], ":")) {
-		host = nameParts[0]
-		name = nameParts[1]
-	}
-
-	if name == "" {
-		return nil, fmt.Errorf("invalid tag: tag must include a name")
-	}
-
-	return &spec.Tag{
-		Host:    host,
-		Name:    name,
-		Version: version,
-	},nil
-}
 
 func ParseTagV2(tag string) (*spec.Tag, error) {
 	pattern := `^(?:(?P<host>[a-zA-Z0-9.-]+(?::[0-9]+)?)\/)?(?:(?P<namespace>[a-zA-Z0-9-._]+)\/)?(?P<name>[a-zA-Z0-9-._]+)(?::(?P<tag>[a-zA-Z0-9-._]+))?$`
@@ -79,4 +40,32 @@ func ParseTagV2(tag string) (*spec.Tag, error) {
 	}
 
 	return &image, nil
+}
+
+func UpdateTag( oldTag, newTag string) error {
+	var index ModuleMap
+	indexPath := paths.GetModuleMapPath()
+	if FileExists(indexPath) {
+		indexBytes, err := os.ReadFile(indexPath); if err != nil {
+			return err
+		}
+		err = json.Unmarshal(indexBytes, &index); if err != nil {
+			return err
+		}
+
+		if sha, ok := index.Modules[oldTag]; ok {
+			index.Modules[newTag] = sha
+			delete(index.Modules, oldTag)
+			indexBytes, err := json.Marshal(index); if err != nil {
+				return err
+			}
+			os.WriteFile(indexPath, indexBytes, 0644)
+			fmt.Printf("Tag %s updated to %s\n", oldTag, newTag)
+			return nil
+		} else {
+			return fmt.Errorf("tag not found in index")
+		}
+	} else {
+		return fmt.Errorf("index file not found")
+	}
 }

@@ -25,7 +25,8 @@ func (c *Cmd) Execute(opts CmdArgs) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		return "", err
+		combinedOutput := stdout.String() + "\n" +stderr.String()
+		return combinedOutput, err
 	}
 
 	if stderr.Len() != 0 {

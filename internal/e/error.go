@@ -27,14 +27,14 @@ func init(){
 }
 
 func Resolve(err error, msg string) error {
-	_, ok := os.LookupEnv("DEBUG")
+	_, ok := os.LookupEnv("NORI_DEBUG")
 	if err != nil {
 		if ok {
 			debug.PrintStack()
 		}
 
 		if msg != "" {
-			slog.Error(msg, err)
+			slog.Error(msg, "error", err.Error())
 			os.Exit(1)
 		}
 		slog.Error(err.Error())
@@ -44,17 +44,17 @@ func Resolve(err error, msg string) error {
 }
 
 func Fatal(err error, msg string) {
-	_, ok := os.LookupEnv("DEBUG")
+	_, ok := os.LookupEnv("NORI_DEBUG")
 	if err != nil {
 		if ok {
 			debug.PrintStack()
 		}
 
 		if msg != "" {
-			slog.Error(msg, err)
+			slog.Error(msg, "error",err.Error())
 			os.Exit(1)
 		}
-		slog.Error(msg, err)
+		slog.Error(msg, "error",err.Error())
 		os.Exit(1)
 	}
 }
