@@ -1,5 +1,5 @@
 # Building Modules For Deployability
-Ideally your modules should be as battery-included as possible. This means that your module should be able to be deployed with minimal configuration. This may include setting provider defaults in your module. You should reduce the use of external dependencies in your module. This will make your module more portable and easier to deploy.
+Ideally your modules should be as batteries included as possible. This means that your module should be able to be deployed with minimal configuration. This may include setting provider defaults in your module. You should reduce the use of external dependencies in your module. This will make your module more portable and easier to deploy.
 
 ## Build your first module
 To build your first module, you need to create a directory for your module. This directory should contain your Terraform configuration files. Here is an example of a simple module that creates an S3 bucket:
