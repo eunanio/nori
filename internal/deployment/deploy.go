@@ -57,8 +57,9 @@ func Run(opts DeploymentOpts) error {
 	fmt.Println("Generating Workspace...")
 	hcl.GenerateModuleBlock(opts.Tag.Name, tmpDir, values)
 	backend.GenerateBackendBlock(opts.ReleaseId)
-	hcl.GenerateOutputsBlock(opts.Tag.Name, tmpDir, config.Outputs)
-	
+	if len(config.Outputs) > 0 {
+		hcl.GenerateOutputsBlock(opts.Tag.Name, tmpDir, config.Outputs)
+	}
 	err = copyProviderFile(tmpDir, opts.ProviderFile)
 	if err != nil {
 		return err
