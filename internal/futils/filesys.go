@@ -81,9 +81,9 @@ func CreateOrUpdateIndex(tag *spec.Tag, sha string) error {
 		index.Modules = make(map[string]string)
 	}
 
-	if _, ok := index.Modules[tag.String()]; ok {
-		return nil
-	}
+	// if _, ok := index.Modules[tag.String()]; ok {
+	// 	return nil
+	// }
 
 	index.Modules[tag.String()] = sha
 	indexBytes, err := json.Marshal(index); if err != nil {

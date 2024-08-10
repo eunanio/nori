@@ -8,8 +8,8 @@ import (
 )
 
 type ApplyOpts struct {
-	Path string
-	Plan string
+	Path    string
+	Plan    string
 	Runtime string
 }
 
@@ -17,13 +17,16 @@ func Plan(path string) (string, error) {
 	config := config.Load()
 	if config == nil {
 		fmt.Println("error: config not found, ensure you have run nori init?")
-		return "", nil
+		return "", fmt.Errorf("error: config not found, ensure you have run nori init?")
 	}
 	exe := cmd.Cmd{}
+
+	init_args := []string{"init"}
+
 	init_opts := cmd.CmdArgs{
 		Dir:  path,
 		Run:  config.Runtime,
-		Args: []string{"init"},
+		Args: init_args,
 	}
 	plan_opts := cmd.CmdArgs{
 		Dir:  path,
@@ -50,12 +53,14 @@ func Apply(path string) (string, error) {
 	}
 
 	exe := cmd.Cmd{}
+
+	init_args := []string{"init"}
 	init_opts := cmd.CmdArgs{
 		Dir:  path,
 		Run:  config.Runtime,
-		Args: []string{"init"},
+		Args: init_args,
 	}
-	plan_opts := cmd.CmdArgs{
+	apply_opts := cmd.CmdArgs{
 		Dir:  path,
 		Run:  config.Runtime,
 		Args: []string{"apply", "-auto-approve", "-input=false"},
@@ -65,7 +70,29 @@ func Apply(path string) (string, error) {
 		return out, err
 	}
 
-	out, err = exe.Execute(plan_opts)
+	out, err = exe.Execute(apply_opts)
+	if err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func Destroy(path string) (string, error) {
+	config := config.Load()
+	if config == nil {
+		fmt.Println("error: config not found, ensure you have run nori init?")
+		return "", nil
+	}
+
+	exe := cmd.Cmd{}
+
+	destory_opts := cmd.CmdArgs{
+		Dir:  path,
+		Run:  config.Runtime,
+		Args: []string{"apply", "-auto-approve", "-input=false", "-destroy"},
+	}
+
+	out, err := exe.Execute(destory_opts)
 	if err != nil {
 		return out, err
 	}

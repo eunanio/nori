@@ -14,7 +14,8 @@ var deployCmd = &cobra.Command{
 	Short: "Deploy infrastructure",
 	Long:  `Deploy infrastructure from image`,
 	Run: func(cmd *cobra.Command, args []string) {
-		tag, err := futils.ParseTagV2(args[0]); if err != nil {
+		tag, err := futils.ParseTagV2(args[0])
+		if err != nil {
 			fmt.Println("Error parsing tag: ", err.Error())
 		}
 
@@ -27,10 +28,10 @@ var deployCmd = &cobra.Command{
 		}
 
 		opts := deployment.DeploymentOpts{
-			Tag: tag,
+			Tag:        tag,
 			ValuesPath: valuesFileFlag,
-			ApplyType: deployment.TYPE_APPLY,
-			ReleaseId: releaseFlag,
+			ApplyType:  deployment.TYPE_APPLY,
+			ReleaseId:  releaseFlag,
 		}
 
 		err = deployment.Run(opts)

@@ -19,7 +19,7 @@ func TestWriteBlob(t *testing.T){
 		}
 
 		for _, tt := range tests {
-			digest, err := WriteBlob(tt.data, tt.tag, tt.mediaType)
+			digest, err := WriteBlob(tt.data, tt.mediaType)
 			if tt.err {
 				if err == nil {
 					t.Errorf("expected error for tag %s, got nil", digest.Digest)
@@ -34,7 +34,7 @@ func TestLoadBlob(t *testing.T){
 	t.Run("LoadBlob from fs", func(t *testing.T){
 		// test cases
 		// Test data file
-		WriteBlob([]byte("test"), &spec.Tag{Host: "localhost:5000", Name: "test", Version: "v1"}, spec.MEDIA_TYPE_EMPTY)
+		WriteBlob([]byte("test"),spec.MEDIA_TYPE_EMPTY)
 	tests := []struct {
 			sha string
 			err bool

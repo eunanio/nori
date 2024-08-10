@@ -39,7 +39,7 @@ nori deploy 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1 --v
 | --provider | The path to the provider file |
 
 ### Package
-To package your Terraform module provide a valid tag and path to your module directory , run the following command:
+To package your Terraform module provide a valid tag and path to your module directory, tags that do not include a remote host will be considered local only e.g. `create-s3-bucket:v1` , run the following command:
 ```bash
 nori package --tag 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1 ./modules/s3-bucket
 ```
@@ -69,4 +69,33 @@ nori pull 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1
 Use tag to rename a module in the local registry:
 ```bash
 nori tag create-s3-bucket:v1 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v2
+```
+
+## List Packages
+List all local packages
+```bash
+nori ls
+```
+
+## Inspect Package
+get details about a package from its manifest
+```bash
+nori inspect create-s3-bucket:v2
+```
+
+## Projects
+Projects are the same as workspaces and make up the logical naming of groups of resoruces. when you run `nori init` the your project will be sent as `default`.
+Setting project:
+```bash
+nori config --set-project storage
+```
+Get current Project
+```bash
+nori config project
+```
+
+## Destorying Resoruces
+Destorys the state for all resources in a release. release id is made of two parts `<project>/<uuid>`
+```bash
+nori destroy storage/01913dd7-c2f2-7d64-b235-263d0f630209
 ```

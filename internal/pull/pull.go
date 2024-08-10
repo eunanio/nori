@@ -28,11 +28,11 @@ func PullImage(tag *spec.Tag, export bool, ctxPath string) (*spec.Manifest, *spe
 
 		manifestBytes, err := manifest.Marshal()
 		e.Resolve(err, "Error marshalling manifest")
-		futils.WriteBlob(manifestBytes, tag, spec.MEDIA_TYPE_MANIFEST)
+		futils.WriteBlob(manifestBytes, spec.MEDIA_TYPE_MANIFEST)
 	}
 	// os.WriteFile(manifestPath, manifestBytes, 0644)
 	pullLayers(reg, manifest, tag)
-	config, err := pullConfig(reg, manifest, tag)
+	config, err := PullConfig(reg, manifest, tag)
 	e.Fatal(err, "Error pulling config")
 
 	fmt.Println("Image pulled successfully")
@@ -57,18 +57,18 @@ func pullLayers(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag) {
 		pullOpts := oci.PullBlobOptions{
 			Name:   tag.Name,
 			Digest: layer,
-			Tag:   tag,
+			Tag:    tag,
 		}
 
 		layerData, err := reg.PullBlob(pullOpts)
 		e.Resolve(err, "Error pulling layer")
 
-		_, err = futils.WriteBlob(layerData, tag, spec.MEDIA_TYPE_MODULE_PRIMARY)
+		_, err = futils.WriteBlob(layerData, spec.MEDIA_TYPE_MODULE_PRIMARY)
 		e.Fatal(err, "Error writing layer")
 	}
 }
 
-func pullConfig(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag) (config *spec.Config, err error) {
+func PullConfig(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag) (config *spec.Config, err error) {
 	sha := manifest.Config.Digest[7:]
 	configPath := paths.GetBlobPathV2(sha)
 	if futils.FileExists(configPath) {
@@ -89,7 +89,7 @@ func pullConfig(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag) (conf
 	pullOpts := oci.PullBlobOptions{
 		Name:   tag.Name,
 		Digest: manifest.Config,
-		Tag:   tag,
+		Tag:    tag,
 	}
 
 	configData, err := reg.PullBlob(pullOpts)
@@ -97,7 +97,7 @@ func pullConfig(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag) (conf
 		return nil, err
 	}
 
-	_, err = futils.WriteBlob(configData,tag,spec.MEDIA_TYPE_CONFIG)
+	_, err = futils.WriteBlob(configData, spec.MEDIA_TYPE_CONFIG)
 	if err != nil {
 		return nil, err
 	}
@@ -121,8 +121,13 @@ func createAndExport(manifest *spec.Manifest, ctxPath string) {
 		}
 		if layer.MediaType == spec.MEDIA_TYPE_MODULE_PRIMARY {
 			layerData, err := futils.LoadBlob(layer.Digest)
-			e.Resolve(err, "Error loading layer")
-			futils.DecompressModule(layerData, path)
+			if err != nil {
+				panic(err)
+			}
+			err = futils.DecompressModule(layerData, path)
+			if err != nil {
+				panic(err)
+			}
 		} else {
 			fmt.Printf("%s: skipping\n", sha[:24])
 		}
