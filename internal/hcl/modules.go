@@ -42,9 +42,25 @@ func GenerateModuleBlock(name, path string, attrs map[string]interface{}) {
 func GenerateOutputsBlock(moduleName string, path string, outputs map[string]spec.ModuleOutputs) {
 	root := make(map[string]interface{})
 	outputsMap := make(map[string]interface{})
-	for k := range outputs {
+	for k, v := range outputs {
+		var sensative bool
+		var description string
+		if v.Sensitive != nil {
+			sensative = *v.Sensitive
+		}
+		if v.Description != nil {
+			description = *v.Description
+		}
+
 		outputsMap[k] = map[string]interface{}{
 			"value": fmt.Sprintf("${module.%s.%s}", moduleName, k),
+		}
+
+		if v.Sensitive != nil {
+			outputsMap[k].(map[string]interface{})["sensitive"] = sensative
+		}
+		if v.Description != nil {
+			outputsMap[k].(map[string]interface{})["description"] = description
 		}
 	}
 
