@@ -3,6 +3,7 @@ package futils
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -14,7 +15,7 @@ import (
 	"github.com/eunanhardy/nori/internal/spec"
 )
 
-func WriteBlob(data []byte, tag *spec.Tag, mediaType string) (*spec.Digest, error){
+func WriteBlob(data []byte, mediaType string) (*spec.Digest, error) {
 	hasher := sha256.New()
 	hasher.Write(data)
 	hash := hex.EncodeToString(hasher.Sum(nil))
@@ -27,8 +28,8 @@ func WriteBlob(data []byte, tag *spec.Tag, mediaType string) (*spec.Digest, erro
 		return nil, fmt.Errorf("error writing blob: %s", err)
 	}
 
-	fmt.Printf("Writing: sha256:%s\n",hash)
-	return &spec.Digest{MediaType: mediaType,Size: fileSize, Digest: "sha256:"+hash},nil
+	fmt.Printf("Writing: sha256:%s\n", hash)
+	return &spec.Digest{MediaType: mediaType, Size: fileSize, Digest: "sha256:" + hash}, nil
 }
 
 func LoadBlob(digest string) (data []byte, err error) {
@@ -41,64 +42,74 @@ func LoadBlob(digest string) (data []byte, err error) {
 	return nil, fmt.Errorf("file not found")
 }
 
-
 // CompressDir compresses the given directory and returns the tar file as a byte array.
 func CompressModule(src string, name string) ([]byte, error) {
-    var buf bytes.Buffer
-    tw := tar.NewWriter(&buf)
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	defer gw.Close()
+	tw := tar.NewWriter(gw)
+	defer tw.Close()
 
-    err := filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
-        if err != nil {
-            return err
-        }
+	err := filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 
-        header, err := tar.FileInfoHeader(fi, fi.Name())
-        if err != nil {
-            return err
-        }
+		header, err := tar.FileInfoHeader(fi, fi.Name())
+		if err != nil {
+			return fmt.Errorf("failed to create tar header: %w", err)
+		}
 
-        relativePath, err := filepath.Rel(src, file)
-        if err != nil {
-            return err
-        }
+		relativePath, err := filepath.Rel(src, file)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path: %w", err)
+		}
 
-        header.Name = filepath.Join(name, relativePath)
+		header.Name = filepath.Join(name, relativePath)
+		if err := tw.WriteHeader(header); err != nil {
+			return fmt.Errorf("failed to write tar header: %w", err)
+		}
 
-        if err := tw.WriteHeader(header); err != nil {
-            return err
-        }
+		if !fi.Mode().IsDir() {
+			data, err := os.Open(file)
+			if err != nil {
+				return fmt.Errorf("failed to open file: %w", err)
+			}
+			defer data.Close()
 
-        if !fi.Mode().IsDir() {
-            data, err := os.Open(file)
-            if err != nil {
-                return err
-            }
-            defer data.Close()
+			if _, err := io.Copy(tw, data); err != nil {
+				return fmt.Errorf("failed to copy file data: %w", err)
+			}
 
-            if _, err := io.Copy(tw, data); err != nil {
-                return err
-            }
-        }
+		}
 
-        return nil
-    })
+		return nil
+	})
 
-    if err != nil {
-        return nil, fmt.Errorf("failed to walk directory: %w", err)
-    }
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk directory: %w", err)
+	}
 
-    if err := tw.Close(); err != nil {
-        return nil, fmt.Errorf("failed to close tar writer: %w", err)
-    }
+	if err := tw.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close tar writer: %w", err)
+	}
 
-    return buf.Bytes(), nil
+	if err := gw.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close gzip writer: %w", err)
+	}
+
+	return buf.Bytes(), nil
 }
-
 
 func DecompressModule(tarBytes []byte, destPath string) error {
 	// Create a reader for the byte slice
 	byteReader := bytes.NewReader(tarBytes)
-	tarReader := tar.NewReader(byteReader)
+	gzipReader, err := gzip.NewReader(byteReader)
+	if err != nil {
+		return fmt.Errorf("error creating gzip reader: %w", err)
+	}
+	defer gzipReader.Close()
+	tarReader := tar.NewReader(gzipReader)
 
 	// Iterate over the tar file entries
 	for {
@@ -120,19 +131,17 @@ func DecompressModule(tarBytes []byte, destPath string) error {
 				return fmt.Errorf("error creating directory: %w", err)
 			}
 		case tar.TypeReg:
-			// Create file
 			file, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(header.Mode))
 			if err != nil {
 				return fmt.Errorf("error creating file: %w", err)
 			}
-			// Copy file content
+
 			if _, err := io.Copy(file, tarReader); err != nil {
 				file.Close()
 				return fmt.Errorf("error writing file content: %w", err)
 			}
 			file.Close()
 		default:
-			// Handle other file types as needed
 			return fmt.Errorf("unsupported file type: %v", header.Typeflag)
 		}
 	}

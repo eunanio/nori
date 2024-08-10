@@ -14,7 +14,8 @@ var planCmd = &cobra.Command{
 	Short: "Plan a deployment",
 	Long:  `Plan a deployment of a module`,
 	Run: func(cmd *cobra.Command, args []string) {
-		tag, err := futils.ParseTagV2(args[0]); if err != nil {
+		tag, err := futils.ParseTagV2(args[0])
+		if err != nil {
 			fmt.Println("Error parsing tag: ", err.Error())
 		}
 		if valuesFileFlag == "" {
@@ -27,19 +28,18 @@ var planCmd = &cobra.Command{
 		}
 
 		opts := deployment.DeploymentOpts{
-			Tag: tag,
-			ValuesPath: valuesFileFlag,
-			ApplyType: deployment.TYPE_PLAN,
-			ReleaseId: releaseFlag,
+			Tag:          tag,
+			ValuesPath:   valuesFileFlag,
+			ApplyType:    deployment.TYPE_PLAN,
+			ReleaseId:    releaseFlag,
 			ProviderFile: providerFileFlag,
 		}
 
 		err = deployment.Run(opts)
 		if err != nil {
-			fmt.Println("Error deploying: ", err.Error())
+			fmt.Println(err.Error())
 			os.Exit(1)
 		}
 
 	},
 }
-

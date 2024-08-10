@@ -16,43 +16,48 @@ func PackageModuleV2(tag *spec.Tag, packagePathFlag string) error {
 		os.Exit(1)
 	}
 
-	moduleCompressedData, err := futils.CompressModule(packagePathFlag, tag.Name); if err != nil {
+	moduleCompressedData, err := futils.CompressModule(packagePathFlag, tag.Name)
+	if err != nil {
 		return fmt.Errorf("error compressing module: %s", err)
 	}
 
-	mediaDigest, err := futils.WriteBlob(moduleCompressedData, tag, spec.MEDIA_TYPE_MODULE_PRIMARY)
+	mediaDigest, err := futils.WriteBlob(moduleCompressedData, spec.MEDIA_TYPE_MODULE_PRIMARY)
 	if err != nil {
 		return fmt.Errorf("error packaging blob: %s", err)
 	}
 
-	moduleData, err := hcl.ParseModuleConfig(packagePathFlag); if err != nil {
+	moduleData, err := hcl.ParseModuleConfig(packagePathFlag)
+	if err != nil {
 		return fmt.Errorf("error parsing module config: %s", err)
 	}
 
-	configDigest, err := generateConfig(moduleData, tag); if err != nil {
+	configDigest, err := generateConfig(moduleData, tag)
+	if err != nil {
 		return fmt.Errorf("error generating config: %s", err)
 	}
 
-	manifestDigest, err := generateManifest(*mediaDigest, *configDigest, tag); if err != nil {
+	manifestDigest, err := generateManifest(*mediaDigest, *configDigest, tag)
+	if err != nil {
 		return fmt.Errorf("error generating manifest: %s", err)
 	}
 
-	err = futils.CreateOrUpdateIndex(tag,manifestDigest.Digest); if err != nil {
+	err = futils.CreateOrUpdateIndex(tag, manifestDigest.Digest)
+	if err != nil {
 		return fmt.Errorf("error creating or updating index: %s", err)
 	}
 
 	fmt.Println("Module packaged with tag: ", tag.String())
 
-
 	return nil
 }
 
-func generateManifest(layersDigest, config spec.Digest, tag *spec.Tag) (*spec.Digest,error) {
+func generateManifest(layersDigest, config spec.Digest, tag *spec.Tag) (*spec.Digest, error) {
 
 	var manifest = spec.Manifest{
-		Schema:    2,
-		MediaType: spec.MEDIA_TYPE_MANIFEST,
-		Config:   config,
+		Schema:       2,
+		MediaType:    spec.MEDIA_TYPE_MANIFEST,
+		ArtifactType: spec.ARTIFACT_TYPE,
+		Config:       config,
 		Layers: []spec.Digest{
 			layersDigest,
 		},
@@ -61,17 +66,19 @@ func generateManifest(layersDigest, config spec.Digest, tag *spec.Tag) (*spec.Di
 		},
 	}
 
-	jsonBytes, err := json.Marshal(manifest); if err != nil {
+	jsonBytes, err := json.Marshal(manifest)
+	if err != nil {
 		fmt.Println("Error marshalling manifest: ", err)
-		return nil,err
+		return nil, err
 	}
 
-	digest, err := futils.WriteBlob(jsonBytes, tag, spec.MEDIA_TYPE_MANIFEST); if err != nil {
+	digest, err := futils.WriteBlob(jsonBytes, spec.MEDIA_TYPE_MANIFEST)
+	if err != nil {
 		fmt.Println("Error writing manifest: ", err)
-		return nil,err
+		return nil, err
 	}
 
-	return digest,nil
+	return digest, nil
 }
 
 func validatePackageFlags(packageFlag string, pathFlag string) {
@@ -85,13 +92,14 @@ func validatePackageFlags(packageFlag string, pathFlag string) {
 	}
 }
 
-func generateConfig(data *hcl.ModuleConfig, tag *spec.Tag) (*spec.Digest,error){
+func generateConfig(data *hcl.ModuleConfig, tag *spec.Tag) (*spec.Digest, error) {
 	var inputs = make(map[string]spec.ModuleInputs)
 	var outputs = make(map[string]spec.ModuleOutputs)
+	var resources []string
 	for _, value := range data.Inputs {
 		var input = spec.ModuleInputs{
 			Description: value.Description,
-			Default: value.Default,
+			Default:     value.DefaultValue,
 		}
 		inputs[value.Name] = input
 	}
@@ -99,30 +107,37 @@ func generateConfig(data *hcl.ModuleConfig, tag *spec.Tag) (*spec.Digest,error){
 	for _, value := range data.Outputs {
 		var output = spec.ModuleOutputs{
 			Description: value.Description,
-			Sensitive: value.Sensitive,
+			Sensitive:   value.Sensitive,
 		}
 		outputs[value.Name] = output
 	}
 
+	for _, value := range data.Resources {
+		resources = append(resources, value.Type)
+	}
+
 	config := spec.Config{
 		SchemaVersion: 1,
-		MediaType: spec.MEDIA_TYPE_CONFIG,
-		Name: tag.Name,
-		Version: tag.Version,
-		Remote: tag.Host,
-		Inputs: inputs,
-		Outputs: outputs,
+		MediaType:     spec.MEDIA_TYPE_CONFIG,
+		Name:          tag.Name,
+		Version:       tag.Version,
+		Remote:        tag.Host,
+		Inputs:        inputs,
+		Outputs:       outputs,
+		Resources:     resources,
 	}
 
-	jsonBytes, err := json.Marshal(config); if err != nil {
+	jsonBytes, err := json.Marshal(config)
+	if err != nil {
 		fmt.Println("Error marshalling config: ", err)
-		return nil,err
+		return nil, err
 	}
 
-	digest,err := futils.WriteBlob(jsonBytes, tag,spec.MEDIA_TYPE_CONFIG); if err != nil {
+	digest, err := futils.WriteBlob(jsonBytes, spec.MEDIA_TYPE_CONFIG)
+	if err != nil {
 		fmt.Println("Error compressing empty json: ", err)
-		return nil,err
+		return nil, err
 	}
-	
-	return digest,nil
+
+	return digest, nil
 }

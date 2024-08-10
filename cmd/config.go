@@ -25,14 +25,14 @@ var ConfigInitCmd = &cobra.Command{
 	Long:  `Initialize nori configuration`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Do stuff here
-		config := config.Config{Runtime: "terraform"}
+		configObj := config.Config{Runtime: "terraform", Project: "default"}
 		configPath := paths.GetConfigPath()
-		err := validateConfigFlags(&config)
+		err := validateConfigFlags(&configObj)
 		if err != nil {
 			panic(err)
 		}
 
-		jsonBytes, err := json.MarshalIndent(config, "", "  ")
+		jsonBytes, err := json.MarshalIndent(configObj, "", "  ")
 		if err != nil {
 			panic("Error: Could not marshal config")
 		}
@@ -40,7 +40,42 @@ var ConfigInitCmd = &cobra.Command{
 		if err != nil {
 			panic("Error: Could not write config file")
 		}
+		if projectFlag != "" {
+			err = config.SetProject(projectFlag)
+			if err != nil {
+				panic(err)
+			}
+		}
 		fmt.Println("Nori configuration initialized successfully")
+	},
+}
+
+var ConfigCmd = &cobra.Command{
+	Use:   "config",
+	Short: "Manage nori configuration",
+	Long:  `Manage nori configuration`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if projectFlag != "" {
+			fmt.Println("Setting project to: ", projectFlag)
+			err := config.SetProject(projectFlag)
+			if err != nil {
+				panic(err)
+			}
+		}
+	},
+}
+
+var DisplayPorjectCmd = &cobra.Command{
+	Use:   "project",
+	Short: "Display the current project",
+	Long:  `Display the current project`,
+	Run: func(cmd *cobra.Command, args []string) {
+		config := config.Load()
+		if config == nil {
+			fmt.Println("No project set")
+			return
+		}
+		fmt.Println("Current project: ", config.Project)
 	},
 }
 
