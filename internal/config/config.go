@@ -6,8 +6,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/paths"
+	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/paths"
 )
 
 func Load() *Config {

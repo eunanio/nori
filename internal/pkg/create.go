@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/hcl"
-	"github.com/eunanhardy/nori/internal/spec"
+	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/hcl"
+	"github.com/eunanio/nori/internal/spec"
 )
 
 func PackageModuleV2(tag *spec.Tag, packagePathFlag string) error {

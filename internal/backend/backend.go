@@ -6,9 +6,9 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/eunanhardy/nori/internal/config"
-	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/paths"
+	"github.com/eunanio/nori/internal/config"
+	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/paths"
 	"github.com/google/uuid"
 )
 

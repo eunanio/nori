@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/eunanhardy/nori/internal/deployment"
+	"github.com/eunanio/nori/internal/deployment"
 	"github.com/spf13/cobra"
 )
 

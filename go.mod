@@ -1,4 +1,4 @@
-module github.com/eunanhardy/nori
+module github.com/eunanio/nori
 
 go 1.21.4
 

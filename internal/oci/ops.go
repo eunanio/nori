@@ -7,22 +7,22 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/spec"
+	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/spec"
 )
 
 type PushBlobOptions struct {
-	Digest spec.Digest
-	File   []byte
-	Name  string
+	Digest   spec.Digest
+	File     []byte
+	Name     string
 	Insecure bool
-	Tag *spec.Tag
+	Tag      *spec.Tag
 }
 
 type PullBlobOptions struct {
 	Digest spec.Digest
-	Name string
-	Tag *spec.Tag
+	Name   string
+	Tag    *spec.Tag
 }
 
 type PushManifestOptions struct {
@@ -40,14 +40,14 @@ func (r *Registry) PullManifest(tag *spec.Tag) (manifest *spec.Manifest, err err
 		fmt.Println("Using cached manifest")
 		return manifest, nil
 	}
-	
+
 	var endpoint string
 	if tag.Namespace != "" {
 		endpoint = fmt.Sprintf("https://%s/v2/%s/%s/manifests/%s", r.Url, tag.Namespace, tag.Name, tag.Version)
 	} else {
 		endpoint = fmt.Sprintf("https://%s/v2/%s/manifests/%s", r.Url, tag.Name, tag.Version)
 	}
-	
+
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %s", err.Error())
@@ -86,7 +86,7 @@ func (r *Registry) PullManifest(tag *spec.Tag) (manifest *spec.Manifest, err err
 	return manifest, nil
 }
 
-func (r *Registry) PushManifest(opts PushManifestOptions) (error) {
+func (r *Registry) PushManifest(opts PushManifestOptions) error {
 	jsonBytes, err := json.Marshal(opts.Manifest)
 	if err != nil {
 		return fmt.Errorf("error marshalling manifest: %s", err.Error())
@@ -125,7 +125,7 @@ func (r *Registry) PushManifest(opts PushManifestOptions) (error) {
 		if err != nil {
 			return fmt.Errorf("error creating request: %s", err.Error())
 		}
-		
+
 		uploadReq.Header.Add("Content-Type", spec.MEDIA_TYPE_MANIFEST)
 
 		if r.Auth != "" {
@@ -173,7 +173,7 @@ func (r *Registry) PullBlob(opts PullBlobOptions) (data []byte, err error) {
 
 	if resp.StatusCode != 200 {
 		if resp.StatusCode == http.StatusUnauthorized {
-			return nil,fmt.Errorf("unauthorized, please use nori login to authenticate")
+			return nil, fmt.Errorf("unauthorized, please use nori login to authenticate")
 		}
 		return nil, fmt.Errorf("failed to pull blob: %s", resp.Status)
 	}
@@ -229,7 +229,7 @@ func (r *Registry) PushBlob(opts PushBlobOptions) error {
 	if err != nil {
 		return err
 	}
-	
+
 	req.Header.Add("Content-Type", "application/octet-stream")
 	query := req.URL.Query()
 	query.Add("digest", opts.Digest.Digest)
@@ -239,7 +239,8 @@ func (r *Registry) PushBlob(opts PushBlobOptions) error {
 		req.Header.Add("Authorization", r.Auth)
 	}
 
-	resp, err = client.Do(req); if err != nil {
+	resp, err = client.Do(req)
+	if err != nil {
 		return err
 	}
 

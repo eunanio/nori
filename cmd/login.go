@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/oci"
+	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/oci"
 	"github.com/spf13/cobra"
 )
 

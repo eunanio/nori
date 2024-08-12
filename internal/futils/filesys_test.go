@@ -3,17 +3,17 @@ package futils
 import (
 	"testing"
 
-	"github.com/eunanhardy/nori/internal/spec"
+	"github.com/eunanio/nori/internal/spec"
 )
 
-func TestWriteBlob(t *testing.T){
-	t.Run("WriteBlob to fs", func(t *testing.T){
+func TestWriteBlob(t *testing.T) {
+	t.Run("WriteBlob to fs", func(t *testing.T) {
 		// test cases
-	tests := []struct {
-			data []byte
-			tag *spec.Tag
+		tests := []struct {
+			data      []byte
+			tag       *spec.Tag
 			mediaType string
-			err bool
+			err       bool
 		}{
 			{[]byte("test"), &spec.Tag{Host: "localhost:5000", Name: "test", Version: "v1"}, spec.MEDIA_TYPE_EMPTY, false},
 		}
@@ -30,12 +30,12 @@ func TestWriteBlob(t *testing.T){
 	})
 }
 
-func TestLoadBlob(t *testing.T){
-	t.Run("LoadBlob from fs", func(t *testing.T){
+func TestLoadBlob(t *testing.T) {
+	t.Run("LoadBlob from fs", func(t *testing.T) {
 		// test cases
 		// Test data file
-		WriteBlob([]byte("test"),spec.MEDIA_TYPE_EMPTY)
-	tests := []struct {
+		WriteBlob([]byte("test"), spec.MEDIA_TYPE_EMPTY)
+		tests := []struct {
 			sha string
 			err bool
 		}{

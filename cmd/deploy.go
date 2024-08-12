@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/eunanhardy/nori/internal/deployment"
-	"github.com/eunanhardy/nori/internal/futils"
+	"github.com/eunanio/nori/internal/deployment"
+	"github.com/eunanio/nori/internal/futils"
 	"github.com/spf13/cobra"
 )
 

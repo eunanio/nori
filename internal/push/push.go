@@ -3,10 +3,10 @@ package push
 import (
 	"fmt"
 
-	"github.com/eunanhardy/nori/internal/e"
-	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/oci"
-	"github.com/eunanhardy/nori/internal/spec"
+	"github.com/eunanio/nori/internal/e"
+	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/oci"
+	"github.com/eunanio/nori/internal/spec"
 )
 
 func PushImage(tag *spec.Tag, insecure bool) {
@@ -41,10 +41,10 @@ func pushConfig(digest spec.Digest, tag *spec.Tag, reg *oci.Registry, insecure b
 	e.Resolve(err, "Error loading config file")
 
 	opts := &oci.PushBlobOptions{
-		Digest: digest,
-		File:   fileData,
-		Name:   tag.Name,
-		Tag:   	tag,
+		Digest:   digest,
+		File:     fileData,
+		Name:     tag.Name,
+		Tag:      tag,
 		Insecure: insecure,
 	}
 	err = reg.PushBlob(*opts)
@@ -59,10 +59,10 @@ func pushLayers(layers []spec.Digest, tag *spec.Tag, reg *oci.Registry, insecure
 		e.Resolve(err, "Error loading layer file")
 
 		opts := &oci.PushBlobOptions{
-			Digest: layer,
-			File:   fileData,
-			Name:   tag.Name,
-			Tag:  	tag,
+			Digest:   layer,
+			File:     fileData,
+			Name:     tag.Name,
+			Tag:      tag,
 			Insecure: insecure,
 		}
 

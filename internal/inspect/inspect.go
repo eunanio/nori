@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/eunanhardy/nori/internal/e"
-	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/oci"
-	"github.com/eunanhardy/nori/internal/pull"
-	"github.com/eunanhardy/nori/internal/spec"
+	"github.com/eunanio/nori/internal/e"
+	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/oci"
+	"github.com/eunanio/nori/internal/pull"
+	"github.com/eunanio/nori/internal/spec"
 )
 
 func GetImageInfo(tag *spec.Tag) {

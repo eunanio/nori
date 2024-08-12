@@ -14,8 +14,8 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/eunanhardy/nori/internal/config"
-	"github.com/eunanhardy/nori/internal/paths"
+	"github.com/eunanio/nori/internal/config"
+	"github.com/eunanio/nori/internal/paths"
 	"github.com/spf13/cobra"
 )
 

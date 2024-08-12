@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"github.com/eunanhardy/nori/internal/e"
-	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/pull"
+	"github.com/eunanio/nori/internal/e"
+	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/pull"
 	"github.com/spf13/cobra"
 )
 
@@ -19,6 +19,6 @@ var pullCmd = &cobra.Command{
 
 		tag, err := futils.ParseTagV2(tagInput)
 		e.Fatal(err, "Error: Invalid tag")
-		pull.PullImage(tag,pullCreateFlag,".")
+		pull.PullImage(tag, pullCreateFlag, ".")
 	},
 }

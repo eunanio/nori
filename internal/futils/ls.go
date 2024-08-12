@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/eunanhardy/nori/internal/paths"
+	"github.com/eunanio/nori/internal/paths"
 )
 
 func ListPackages() error {

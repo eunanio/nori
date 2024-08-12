@@ -7,8 +7,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/pkg"
+	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/pkg"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +22,7 @@ var packageCmd = &cobra.Command{
 			fmt.Println("Error parsing tag: ", err)
 			return
 		}
-		err  = pkg.PackageModuleV2(tag, args[0])
+		err = pkg.PackageModuleV2(tag, args[0])
 		if err != nil {
 			fmt.Println("Error packaging module: ", err.Error())
 			return

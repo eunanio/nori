@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/eunanhardy/nori/internal/paths"
-	"github.com/eunanhardy/nori/internal/spec"
+	"github.com/eunanio/nori/internal/paths"
+	"github.com/eunanio/nori/internal/spec"
 	"gopkg.in/yaml.v2"
 )
 
@@ -17,34 +17,37 @@ type ModuleMap struct {
 }
 
 func FileExists(filename string) bool {
-    _, err := os.Stat(filename)
-    return !os.IsNotExist(err)
+	_, err := os.Stat(filename)
+	return !os.IsNotExist(err)
 }
 
 func GetStdin() (msg string) {
 	scanner := bufio.NewScanner(os.Stdin)
-      if scanner.Scan() {
-        msg = scanner.Text()
-      }
-      if err := scanner.Err(); err != nil {
-        fmt.Fprintln(os.Stderr, "reading standard input:", err)
-      }
-	
-      return msg
+	if scanner.Scan() {
+		msg = scanner.Text()
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, "reading standard input:", err)
+	}
+
+	return msg
 }
 
 func ParseValuesFile(file string, config *spec.Config) (values map[string]interface{}, err error) {
 
-	fileBytes, err := os.ReadFile(file); if err != nil {
-		return nil, fmt.Errorf("Error reading values file: "+ err.Error())
+	fileBytes, err := os.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("Error reading values file: " + err.Error())
 	}
 
 	if filepath.Ext(file) == ".json" {
-		err = json.Unmarshal(fileBytes, &values); if err != nil {
+		err = json.Unmarshal(fileBytes, &values)
+		if err != nil {
 			return nil, err
 		}
 	} else if filepath.Ext(file) == ".yaml" || filepath.Ext(file) == ".yml" {
-		err = yaml.Unmarshal(fileBytes, &values); if err != nil {
+		err = yaml.Unmarshal(fileBytes, &values)
+		if err != nil {
 			return nil, err
 		}
 	} else {
@@ -69,10 +72,12 @@ func CreateOrUpdateIndex(tag *spec.Tag, sha string) error {
 	var index ModuleMap
 	indexPath := paths.GetModuleMapPath()
 	if FileExists(indexPath) {
-		indexBytes, err := os.ReadFile(indexPath); if err != nil {
+		indexBytes, err := os.ReadFile(indexPath)
+		if err != nil {
 			return err
 		}
-		err = json.Unmarshal(indexBytes, &index); if err != nil {
+		err = json.Unmarshal(indexBytes, &index)
+		if err != nil {
 			return err
 		}
 	}
@@ -86,7 +91,8 @@ func CreateOrUpdateIndex(tag *spec.Tag, sha string) error {
 	// }
 
 	index.Modules[tag.String()] = sha
-	indexBytes, err := json.Marshal(index); if err != nil {
+	indexBytes, err := json.Marshal(index)
+	if err != nil {
 		return err
 	}
 	os.WriteFile(indexPath, indexBytes, 0644)
@@ -97,16 +103,19 @@ func RemoveIndexEntry(tag *spec.Tag) error {
 	var index ModuleMap
 	indexPath := paths.GetModuleMapPath()
 	if FileExists(indexPath) {
-		indexBytes, err := os.ReadFile(indexPath); if err != nil {
+		indexBytes, err := os.ReadFile(indexPath)
+		if err != nil {
 			return err
 		}
-		err = json.Unmarshal(indexBytes, &index); if err != nil {
+		err = json.Unmarshal(indexBytes, &index)
+		if err != nil {
 			return err
 		}
 	}
 
 	delete(index.Modules, tag.String())
-	indexBytes, err := json.Marshal(index); if err != nil {
+	indexBytes, err := json.Marshal(index)
+	if err != nil {
 		return err
 	}
 	os.WriteFile(indexPath, indexBytes, 0644)
@@ -117,10 +126,12 @@ func GetTaggedManifest(tag *spec.Tag) (*spec.Manifest, error) {
 	var index ModuleMap
 	indexPath := paths.GetModuleMapPath()
 	if FileExists(indexPath) {
-		indexBytes, err := os.ReadFile(indexPath); if err != nil {
+		indexBytes, err := os.ReadFile(indexPath)
+		if err != nil {
 			return nil, err
 		}
-		err = json.Unmarshal(indexBytes, &index); if err != nil {
+		err = json.Unmarshal(indexBytes, &index)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -128,16 +139,18 @@ func GetTaggedManifest(tag *spec.Tag) (*spec.Manifest, error) {
 	if sha, ok := index.Modules[tag.String()]; ok {
 		manifestPath := paths.GetBlobPathV2(sha)
 		if FileExists(manifestPath) {
-			manifestBytes, err := os.ReadFile(manifestPath); if err != nil {
+			manifestBytes, err := os.ReadFile(manifestPath)
+			if err != nil {
 				return nil, err
 			}
 			var manifest spec.Manifest
-			err = json.Unmarshal(manifestBytes, &manifest); if err != nil {
+			err = json.Unmarshal(manifestBytes, &manifest)
+			if err != nil {
 				return nil, err
 			}
 			return &manifest, nil
 		}
-		
+
 		return nil, nil
 	}
 
@@ -148,4 +161,3 @@ func IsDebug() bool {
 	_, ok := os.LookupEnv("NORI_DEBUG")
 	return ok
 }
-

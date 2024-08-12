@@ -3,8 +3,8 @@ package tf
 import (
 	"fmt"
 
-	"github.com/eunanhardy/nori/internal/config"
-	"github.com/eunanhardy/nori/internal/tf/cmd"
+	"github.com/eunanio/nori/internal/config"
+	"github.com/eunanio/nori/internal/tf/cmd"
 )
 
 type ApplyOpts struct {

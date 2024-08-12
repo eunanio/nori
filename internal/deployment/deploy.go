@@ -6,14 +6,14 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/eunanhardy/nori/internal/backend"
-	"github.com/eunanhardy/nori/internal/config"
-	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/hcl"
-	"github.com/eunanhardy/nori/internal/paths"
-	"github.com/eunanhardy/nori/internal/pull"
-	"github.com/eunanhardy/nori/internal/spec"
-	"github.com/eunanhardy/nori/internal/tf"
+	"github.com/eunanio/nori/internal/backend"
+	"github.com/eunanio/nori/internal/config"
+	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/hcl"
+	"github.com/eunanio/nori/internal/paths"
+	"github.com/eunanio/nori/internal/pull"
+	"github.com/eunanio/nori/internal/spec"
+	"github.com/eunanio/nori/internal/tf"
 	"github.com/google/uuid"
 )
 

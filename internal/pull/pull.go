@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/eunanhardy/nori/internal/e"
-	"github.com/eunanhardy/nori/internal/futils"
-	"github.com/eunanhardy/nori/internal/oci"
-	"github.com/eunanhardy/nori/internal/paths"
-	"github.com/eunanhardy/nori/internal/spec"
+	"github.com/eunanio/nori/internal/e"
+	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/oci"
+	"github.com/eunanio/nori/internal/paths"
+	"github.com/eunanio/nori/internal/spec"
 )
 
 func PullImage(tag *spec.Tag, export bool, ctxPath string) (*spec.Manifest, *spec.Config) {

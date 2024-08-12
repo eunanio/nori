@@ -11,8 +11,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/eunanhardy/nori/internal/paths"
-	"github.com/eunanhardy/nori/internal/spec"
+	"github.com/eunanio/nori/internal/paths"
+	"github.com/eunanio/nori/internal/spec"
 )
 
 func WriteBlob(data []byte, mediaType string) (*spec.Digest, error) {

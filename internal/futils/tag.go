@@ -6,8 +6,8 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/eunanhardy/nori/internal/paths"
-	"github.com/eunanhardy/nori/internal/spec"
+	"github.com/eunanio/nori/internal/paths"
+	"github.com/eunanio/nori/internal/spec"
 )
 
 func ParseTagV2(tag string) (*spec.Tag, error) {
@@ -42,21 +42,24 @@ func ParseTagV2(tag string) (*spec.Tag, error) {
 	return &image, nil
 }
 
-func UpdateTag( oldTag, newTag string) error {
+func UpdateTag(oldTag, newTag string) error {
 	var index ModuleMap
 	indexPath := paths.GetModuleMapPath()
 	if FileExists(indexPath) {
-		indexBytes, err := os.ReadFile(indexPath); if err != nil {
+		indexBytes, err := os.ReadFile(indexPath)
+		if err != nil {
 			return err
 		}
-		err = json.Unmarshal(indexBytes, &index); if err != nil {
+		err = json.Unmarshal(indexBytes, &index)
+		if err != nil {
 			return err
 		}
 
 		if sha, ok := index.Modules[oldTag]; ok {
 			index.Modules[newTag] = sha
 			delete(index.Modules, oldTag)
-			indexBytes, err := json.Marshal(index); if err != nil {
+			indexBytes, err := json.Marshal(index)
+			if err != nil {
 				return err
 			}
 			os.WriteFile(indexPath, indexBytes, 0644)
