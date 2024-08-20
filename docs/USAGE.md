@@ -74,7 +74,7 @@ nori tag create-s3-bucket:v1 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create
 ## List Packages
 List all local packages
 ```bash
-nori ls
+nori list
 ```
 
 ## Inspect Package
@@ -92,6 +92,12 @@ nori config --set-project storage
 Get current Project
 ```bash
 nori config project
+```
+
+## List Releases
+List Releases that have been deployed. 
+```bash
+nori release list
 ```
 
 ## Destorying Resoruces
