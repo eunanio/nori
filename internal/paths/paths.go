@@ -6,16 +6,17 @@ import (
 )
 
 const (
-	TLP_CREDS_PATH	  = "%s/credentials.json"
-	TLP_BLOB_PATH_V2  = "%s/images/blobs/%s"
-	TLP_MAP_PATH	  = "%s/images/index.json"
-	TLP_BLOB_FILE     = "%s/images/blobs/%s/%s"
-	TLP_HOME_DIR      = "%s/.nori"
-	TLP_IMAGE_DIR     = "%s/images/%s/%s"
-	TLP_CONFIG_FILE   = "%s/config.json"
-	TLP_RELEASE_PATH  = "%s/releases/%s"
+	TLP_CREDS_PATH   = "%s/credentials.json"
+	TLP_BLOB_PATH_V2 = "%s/images/blobs/%s"
+	TLP_MAP_PATH     = "%s/images/index.json"
+	TLP_BLOB_FILE    = "%s/images/blobs/%s/%s"
+	TLP_HOME_DIR     = "%s/.nori"
+	TLP_IMAGE_DIR    = "%s/images/%s/%s"
+	TLP_CONFIG_FILE  = "%s/config.json"
+	TLP_RELEASE_PATH = "%s/releases/%s"
+	TLP_RELEASE_FILE = "%s/releases/releases.json"
+	TLP_STATE_PATH   = "%s/state/%s"
 )
-
 
 func GetOrCreateHomePath() string {
 	homeDir, err := os.UserHomeDir()
@@ -52,14 +53,28 @@ func GetCredsPath() string {
 	return fmt.Sprintf(TLP_CREDS_PATH, homePath)
 }
 
-func GetConfigPath() string{
+func GetConfigPath() string {
 	homePath := GetOrCreateHomePath()
-	return fmt.Sprintf(TLP_CONFIG_FILE,homePath)
+	return fmt.Sprintf(TLP_CONFIG_FILE, homePath)
 }
 
 func GetReleasePath(name string) string {
 	homePath := GetOrCreateHomePath()
 	return fmt.Sprintf(TLP_RELEASE_PATH, homePath, name)
+}
+
+func GetStatePath(name string) string {
+	homePath := GetOrCreateHomePath()
+	return fmt.Sprintf(TLP_STATE_PATH, homePath, name)
+}
+
+func GetReleaseFilePath() string {
+	homePath := GetOrCreateHomePath()
+	val, ok := os.LookupEnv("RELEASE_PATH")
+	if ok {
+		return val
+	}
+	return fmt.Sprintf(TLP_RELEASE_FILE, homePath)
 }
 
 func GetModuleMapPath() string {
@@ -76,4 +91,3 @@ func MkDirIfNotExist(dir string) error {
 	}
 	return nil
 }
-

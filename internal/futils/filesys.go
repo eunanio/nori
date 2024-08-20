@@ -64,6 +64,17 @@ func ParseValuesFile(file string, config *spec.Config) (values map[string]interf
 		}
 	}
 
+	if len(values) != 0 {
+		for key, value := range values {
+			switch v := value.(type) {
+			case map[interface{}]interface{}:
+				values[key] = convertMapKeysToStrings(v)
+			case []interface{}:
+				values[key] = convertSliceKeysToStrings(v)
+			}
+		}
+	}
+
 	return values, nil
 }
 
@@ -155,6 +166,37 @@ func GetTaggedManifest(tag *spec.Tag) (*spec.Manifest, error) {
 	}
 
 	return nil, nil
+}
+
+func convertMapKeysToStrings(input map[interface{}]interface{}) map[string]interface{} {
+	output := make(map[string]interface{})
+	for key, value := range input {
+		strKey := fmt.Sprintf("%v", key)
+		switch v := value.(type) {
+		case map[interface{}]interface{}:
+			output[strKey] = convertMapKeysToStrings(v)
+		case []interface{}:
+			output[strKey] = convertSliceKeysToStrings(v)
+		default:
+			output[strKey] = value
+		}
+	}
+	return output
+}
+
+func convertSliceKeysToStrings(input []interface{}) []interface{} {
+	output := make([]interface{}, len(input))
+	for i, value := range input {
+		switch v := value.(type) {
+		case map[interface{}]interface{}:
+			output[i] = convertMapKeysToStrings(v)
+		case []interface{}:
+			output[i] = convertSliceKeysToStrings(v)
+		default:
+			output[i] = value
+		}
+	}
+	return output
 }
 
 func IsDebug() bool {

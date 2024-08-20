@@ -62,6 +62,13 @@ var ConfigCmd = &cobra.Command{
 				panic(err)
 			}
 		}
+
+		if configRemoteFlag != "" && backendRegionFlag != "" {
+			err := config.SetBackendConfig(&configRemoteFlag, &backendRegionFlag)
+			if err != nil {
+				panic(err)
+			}
+		}
 	},
 }
 
