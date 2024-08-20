@@ -6,7 +6,7 @@ import (
 )
 
 var listCmd = &cobra.Command{
-	Use:   "ls",
+	Use:   "list",
 	Short: "List all the packaged modules",
 	Long:  "List all the packaged modules",
 	Run: func(cmd *cobra.Command, args []string) {

@@ -4,3 +4,5 @@ manifest.json
 compose.yml
 *.log
 *.tf.json
+.idea/
+.vscode/

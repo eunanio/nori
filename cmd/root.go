@@ -88,9 +88,15 @@ func init() {
 	// Config
 	rootCmd.AddCommand(ConfigCmd)
 	ConfigCmd.Flags().StringVarP(&projectFlag, "set-project", "p", "", "Set the project for the configuration")
+	ConfigCmd.Flags().StringVarP(&configRemoteFlag, "backend", "b", "", "backend source for state configuration")
+	ConfigCmd.Flags().StringVarP(&backendRegionFlag, "backend-region", "", "", "region for the backend. Only Support with S3 backend")
 	ConfigCmd.AddCommand(DisplayPorjectCmd)
 
 	// Destroy
 	rootCmd.AddCommand(destroyCmd)
+
+	// Release
+	rootCmd.AddCommand(releaseCmd)
+	releaseCmd.AddCommand(releaseListCmd)
 
 }
