@@ -13,11 +13,11 @@ type ApplyOpts struct {
 	Runtime string
 }
 
-func Plan(path string) (string, error) {
+func Plan(path string) error {
 	config := config.Load()
 	if config == nil {
 		fmt.Println("error: config not found, ensure you have run nori init?")
-		return "", fmt.Errorf("error: config not found, ensure you have run nori init?")
+		return fmt.Errorf("error: config not found, ensure you have run nori init?")
 	}
 	exe := cmd.Cmd{}
 
@@ -33,23 +33,24 @@ func Plan(path string) (string, error) {
 		Run:  config.Runtime,
 		Args: []string{"plan"},
 	}
-	out, err := exe.Execute(init_opts)
+	err := exe.ExecuteWithStream(init_opts)
 	if err != nil {
-		return out, err
+		return err
 	}
 
-	out, err = exe.Execute(plan_opts)
+	err = exe.ExecuteWithStream(plan_opts)
 	if err != nil {
-		return out, err
+		return err
 	}
-	return out, nil
+
+	return nil
 }
 
-func Apply(path string) (string, error) {
+func Apply(path string) error {
 	config := config.Load()
 	if config == nil {
 		fmt.Println("error: config not found, ensure you have run nori init?")
-		return "", nil
+		return nil
 	}
 
 	exe := cmd.Cmd{}
@@ -65,23 +66,23 @@ func Apply(path string) (string, error) {
 		Run:  config.Runtime,
 		Args: []string{"apply", "-auto-approve", "-input=false"},
 	}
-	out, err := exe.Execute(init_opts)
+	err := exe.ExecuteWithStream(init_opts)
 	if err != nil {
-		return out, err
+		return err
 	}
 
-	out, err = exe.Execute(apply_opts)
+	err = exe.ExecuteWithStream(apply_opts)
 	if err != nil {
-		return out, err
+		return err
 	}
-	return out, nil
+	return nil
 }
 
-func Destroy(path string) (string, error) {
+func Destroy(path string) error {
 	config := config.Load()
 	if config == nil {
 		fmt.Println("error: config not found, ensure you have run nori init?")
-		return "", nil
+		return nil
 	}
 
 	exe := cmd.Cmd{}
@@ -99,16 +100,16 @@ func Destroy(path string) (string, error) {
 		Args: []string{"apply", "-auto-approve", "-input=false", "-destroy"},
 	}
 
-	out, err := exe.Execute(init_opts)
+	err := exe.ExecuteWithStream(init_opts)
 	if err != nil {
-		return out, err
+		return err
 	}
 
-	out, err = exe.Execute(destory_opts)
+	err = exe.ExecuteWithStream(destory_opts)
 	if err != nil {
-		return out, err
+		return err
 	}
-	return out, nil
+	return nil
 }
 
 func Output(path string) (string, error) {

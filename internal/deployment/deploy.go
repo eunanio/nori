@@ -125,14 +125,10 @@ func Destory(releaseId string) error {
 		}
 		return err
 	}
-	tfout, err := tf.Destroy(tmpDir)
+	err = tf.Destroy(tmpDir)
 	if err != nil {
-		if futils.IsDebug() {
-			fmt.Println(tfout)
-		}
 		return err
 	}
-	fmt.Println(tfout)
 
 	err = RemoveReleaseFromState(releaseId)
 	if err != nil {
@@ -144,22 +140,20 @@ func Destory(releaseId string) error {
 
 func apply(path string) {
 	fmt.Println("Initiating Terraform Apply...")
-	tfout, err := tf.Apply(path)
+	err := tf.Apply(path)
 	if err != nil {
-		log.Fatal("Runtime error occured", err.Error(), tfout)
+		log.Fatal("Runtime error occured", err.Error())
 		return
 	}
-	fmt.Println(tfout)
 }
 
 func plan(path string) {
 	fmt.Println("Initiating Terraform Plan...")
-	tfout, err := tf.Plan(path)
+	err := tf.Plan(path)
 	if err != nil {
-		log.Fatal("Runtime error occured", err.Error(), tfout)
+		log.Fatal("Runtime error occured", err.Error())
 		return
 	}
-	fmt.Println(tfout)
 }
 
 func copyProviderFile(tmpDir, providerPath string) error {
