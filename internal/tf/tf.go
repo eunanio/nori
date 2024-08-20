@@ -86,13 +86,25 @@ func Destroy(path string) (string, error) {
 
 	exe := cmd.Cmd{}
 
+	init_args := []string{"init"}
+	init_opts := cmd.CmdArgs{
+		Dir:  path,
+		Run:  config.Runtime,
+		Args: init_args,
+	}
+
 	destory_opts := cmd.CmdArgs{
 		Dir:  path,
 		Run:  config.Runtime,
 		Args: []string{"apply", "-auto-approve", "-input=false", "-destroy"},
 	}
 
-	out, err := exe.Execute(destory_opts)
+	out, err := exe.Execute(init_opts)
+	if err != nil {
+		return out, err
+	}
+
+	out, err = exe.Execute(destory_opts)
 	if err != nil {
 		return out, err
 	}

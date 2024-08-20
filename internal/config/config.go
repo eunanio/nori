@@ -63,3 +63,43 @@ func SetProject(project string) error {
 
 	return nil
 }
+
+func SetBackendConfig(remote, region *string) error {
+
+	configPath := paths.GetConfigPath()
+	if !futils.FileExists(configPath) {
+		return fmt.Errorf("config file does not exist, ensure you have run nori init?")
+	}
+
+	configBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("error reading config file: %s", err)
+	}
+	var config Config
+	err = json.Unmarshal(configBytes, &config)
+	if err != nil {
+		return fmt.Errorf("error unmarshalling config file: %s", err)
+	}
+
+	if remote == nil {
+		return fmt.Errorf("remote must be set")
+	}
+
+	if region == nil {
+		return fmt.Errorf("region must be set")
+	}
+
+	config.Remote = remote
+	config.Region = region
+	configBytes, err = json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshalling config: %s", err)
+	}
+
+	err = os.WriteFile(configPath, configBytes, 0644)
+	if err != nil {
+		return fmt.Errorf("error writing config file: %s", err)
+	}
+
+	return nil
+}

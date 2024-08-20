@@ -1,7 +1,10 @@
 package deployment
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"regexp"
@@ -83,6 +86,20 @@ func Run(opts DeploymentOpts) error {
 	}
 	if opts.ApplyType == TYPE_APPLY {
 		fmt.Println("Release ID: ", opts.ReleaseId)
+		valuesBytes, err := json.Marshal(values)
+		if err != nil {
+			return err
+		}
+
+		release := Release{
+			Id:     opts.ReleaseId,
+			Tag:    opts.Tag.String(),
+			Values: hex.EncodeToString(valuesBytes),
+		}
+		err = UpdateOrCreateReleaseState(release)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -103,13 +120,24 @@ func Destory(releaseId string) error {
 
 	err := backend.GenerateBackendBlock(releaseId)
 	if err != nil {
+		if futils.IsDebug() {
+			fmt.Println(err.Error())
+		}
 		return err
 	}
 	tfout, err := tf.Destroy(tmpDir)
 	if err != nil {
+		if futils.IsDebug() {
+			fmt.Println(tfout)
+		}
 		return err
 	}
 	fmt.Println(tfout)
+
+	err = RemoveReleaseFromState(releaseId)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -118,7 +146,8 @@ func apply(path string) {
 	fmt.Println("Initiating Terraform Apply...")
 	tfout, err := tf.Apply(path)
 	if err != nil {
-		slog.Error("Runtime error occured", err.Error(), tfout)
+		log.Fatal("Runtime error occured", err.Error(), tfout)
+		return
 	}
 	fmt.Println(tfout)
 }
@@ -127,7 +156,8 @@ func plan(path string) {
 	fmt.Println("Initiating Terraform Plan...")
 	tfout, err := tf.Plan(path)
 	if err != nil {
-		slog.Error("Runtime error occured", err.Error(), tfout)
+		log.Fatal("Runtime error occured", err.Error(), tfout)
+		return
 	}
 	fmt.Println(tfout)
 }

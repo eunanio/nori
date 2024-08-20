@@ -93,4 +93,8 @@ func init() {
 	// Destroy
 	rootCmd.AddCommand(destroyCmd)
 
+	// Release
+	rootCmd.AddCommand(releaseCmd)
+	releaseCmd.AddCommand(releaseListCmd)
+
 }

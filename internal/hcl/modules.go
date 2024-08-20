@@ -13,16 +13,16 @@ import (
 )
 
 func GenerateModuleBlock(name, path string, attrs map[string]interface{}) {
-	if len(attrs) != 0 {
-		for key, value := range attrs {
-			switch v := value.(type) {
-			case map[interface{}]interface{}:
-				attrs[key] = convertMapKeysToStrings(v)
-			case []interface{}:
-				attrs[key] = convertSliceKeysToStrings(v)
-			}
-		}
-	}
+	// if len(attrs) != 0 {
+	// 	for key, value := range attrs {
+	// 		switch v := value.(type) {
+	// 		case map[interface{}]interface{}:
+	// 			attrs[key] = convertMapKeysToStrings(v)
+	// 		case []interface{}:
+	// 			attrs[key] = convertSliceKeysToStrings(v)
+	// 		}
+	// 	}
+	// }
 
 	modules := make(map[string]interface{})
 	root := make(map[string]interface{})
