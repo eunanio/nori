@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/eunanio/nori/internal/config"
-	"github.com/eunanio/nori/internal/futils"
+	"github.com/eunanio/nori/internal/console"
 	"github.com/eunanio/nori/internal/paths"
 )
 
@@ -79,9 +79,7 @@ func GenerateBackendBlock(releaseId string) error {
 
 func s3Backend(name, bucket, region string) *TFBlock {
 	keyPath := fmt.Sprintf("state/%s/terraform.tfstate", name)
-	if futils.IsDebug() {
-		fmt.Println("Key S3 Path: ", keyPath)
-	}
+	console.Debug(fmt.Sprintf("Key Path: %s", keyPath))
 	backend := &TFBlock{
 		TFBackend: TFBackend{
 			Backend: map[string]interface{}{
@@ -121,9 +119,7 @@ func s3Backend(name, bucket, region string) *TFBlock {
 // }
 
 func localBackend(path string) *TFBlock {
-	if futils.IsDebug() {
-		fmt.Println("Key Local Path: ", path)
-	}
+	console.Debug(fmt.Sprintf("Local Backend Path: %s", path))
 	paths.MkDirIfNotExist(path)
 	backend := &TFBlock{
 		TFBackend: TFBackend{

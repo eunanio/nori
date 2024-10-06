@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/eunanio/nori/internal/console"
 	"github.com/eunanio/nori/internal/futils"
 	"github.com/eunanio/nori/internal/spec"
 )
@@ -127,6 +128,7 @@ func (r *Registry) PushManifest(opts PushManifestOptions) error {
 		}
 
 		uploadReq.Header.Add("Content-Type", spec.MEDIA_TYPE_MANIFEST)
+		uploadReq.Header.Add("Content-Length", fmt.Sprintf("%d", len(jsonBytes)))
 
 		if r.Auth != "" {
 			uploadReq.Header.Add("Authorization", r.Auth)
@@ -136,7 +138,7 @@ func (r *Registry) PushManifest(opts PushManifestOptions) error {
 		if err != nil {
 			return fmt.Errorf("error sending request: %s", err.Error())
 		}
-
+		console.Debug(fmt.Sprint(resp.Body))
 		if resp.StatusCode != 201 {
 			if resp.StatusCode == http.StatusUnauthorized {
 				return fmt.Errorf("unauthorized, please use nori login to authenticate")
@@ -225,16 +227,21 @@ func (r *Registry) PushBlob(opts PushBlobOptions) error {
 
 	// Upload the blob
 	location := resp.Header.Get("Location")
+	if futils.IsDebug() {
+		fmt.Printf("Uploading to %s\n", location)
+	}
 	req, err = http.NewRequest("PUT", location, bytes.NewReader(opts.File))
 	if err != nil {
 		return err
 	}
 
 	req.Header.Add("Content-Type", "application/octet-stream")
+	req.Header.Add("Content-Length", fmt.Sprintf("%d", len(opts.File)))
 	query := req.URL.Query()
 	query.Add("digest", opts.Digest.Digest)
 	req.URL.RawQuery = query.Encode()
 
+	console.Debug(fmt.Sprint(req))
 	if r.Auth != "" {
 		req.Header.Add("Authorization", r.Auth)
 	}

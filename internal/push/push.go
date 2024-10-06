@@ -3,21 +3,19 @@ package push
 import (
 	"fmt"
 
-	"github.com/eunanio/nori/internal/e"
 	"github.com/eunanio/nori/internal/futils"
 	"github.com/eunanio/nori/internal/oci"
 	"github.com/eunanio/nori/internal/spec"
 )
 
-func PushImage(tag *spec.Tag, insecure bool) {
-	// Do Stuff Here
+func PushImage(tag *spec.Tag, insecure bool) error {
 	if tag == nil {
-		panic("Error: Invalid tag")
+		return fmt.Errorf("tag is required")
 	}
 
 	manifest, err := futils.GetTaggedManifest(tag)
 	if err != nil {
-		e.Fatal(err, "Error getting manifest")
+		return fmt.Errorf("error getting manifest: %s", err)
 	}
 
 	creds, _ := oci.GetCredentials(tag.Host)
@@ -25,20 +23,29 @@ func PushImage(tag *spec.Tag, insecure bool) {
 	reg := oci.NewRegistry(tag.Host, creds)
 
 	err = pushLayers(manifest.Layers, tag, reg, insecure)
-	e.Resolve(err, "Error pushing layers")
+	if err != nil {
+		return fmt.Errorf("error pushing layers: %s", err)
+	}
 
 	err = pushConfig(manifest.Config, tag, reg, insecure)
-	e.Resolve(err, "Error pushing config")
+	if err != nil {
+		return fmt.Errorf("error pushing config: %s", err)
+	}
 
 	err = pushManifest(manifest, tag, reg, insecure)
-	e.Resolve(err, "Error pushing manifest")
+	if err != nil {
+		return fmt.Errorf("error pushing manifest: %s", err)
+	}
 
 	fmt.Println("Image pushed successfully")
+	return nil
 }
 
 func pushConfig(digest spec.Digest, tag *spec.Tag, reg *oci.Registry, insecure bool) error {
 	fileData, err := futils.LoadBlob(digest.Digest)
-	e.Resolve(err, "Error loading config file")
+	if err != nil {
+		return fmt.Errorf("error loading config file: %s", err)
+	}
 
 	opts := &oci.PushBlobOptions{
 		Digest:   digest,
@@ -48,7 +55,9 @@ func pushConfig(digest spec.Digest, tag *spec.Tag, reg *oci.Registry, insecure b
 		Insecure: insecure,
 	}
 	err = reg.PushBlob(*opts)
-	e.Fatal(err, "Error pushing config file")
+	if err != nil {
+		return fmt.Errorf("error pushing config: %s", err)
+	}
 
 	return nil
 }
@@ -56,7 +65,9 @@ func pushConfig(digest spec.Digest, tag *spec.Tag, reg *oci.Registry, insecure b
 func pushLayers(layers []spec.Digest, tag *spec.Tag, reg *oci.Registry, insecure bool) error {
 	for _, layer := range layers {
 		fileData, err := futils.LoadBlob(layer.Digest)
-		e.Resolve(err, "Error loading layer file")
+		if err != nil {
+			return fmt.Errorf("error loading layer file: %s", err)
+		}
 
 		opts := &oci.PushBlobOptions{
 			Digest:   layer,

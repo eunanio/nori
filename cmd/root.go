@@ -44,7 +44,7 @@ func Execute() {
 func init() {
 	// Package
 	rootCmd.AddCommand(packageCmd)
-	packageCmd.Flags().StringVarP(&packageTagFlag, "tag", "t", "", "Tag for the image")
+	//packageCmd.Flags().StringVarP(&packageTagFlag, "tag", "t", "", "Tag for the image")
 	//packageCmd.Flags().StringVarP(&packagePathFlag,"path", "p","","Path to the module directory")
 
 	// Config init
@@ -52,6 +52,7 @@ func init() {
 	ConfigInitCmd.Flags().StringVarP(&configRuntimeFlag, "runtime", "r", "", "Runtime for the configuration, e.g. terraform or tofu")
 	ConfigInitCmd.Flags().StringVarP(&configRemoteFlag, "backend", "b", "", "backend source for state configuration")
 	ConfigInitCmd.Flags().StringVarP(&backendRegionFlag, "backend-region", "", "", "region for the backend. Only Support with S3 backend")
+
 	// Login
 	rootCmd.AddCommand(LoginCmd)
 	LoginCmd.Flags().StringVarP(&registryUsernameFlag, "username", "u", "", "Username for the registry")
@@ -71,7 +72,6 @@ func init() {
 	// Deploy
 	rootCmd.AddCommand(deployCmd)
 	deployCmd.Flags().StringVarP(&valuesFileFlag, "values", "v", "", "Values file for the deployment")
-	deployCmd.Flags().StringVarP(&releaseFlag, "release", "r", "", "Release ID for the deployment")
 	deployCmd.Flags().StringVarP(&providerFileFlag, "provider", "p", "", "Provider file for the deployment")
 
 	// Version
@@ -90,6 +90,7 @@ func init() {
 	ConfigCmd.Flags().StringVarP(&projectFlag, "set-project", "p", "", "Set the project for the configuration")
 	ConfigCmd.Flags().StringVarP(&configRemoteFlag, "backend", "b", "", "backend source for state configuration")
 	ConfigCmd.Flags().StringVarP(&backendRegionFlag, "backend-region", "", "", "region for the backend. Only Support with S3 backend")
+	ConfigCmd.Flags().StringVarP(&configRuntimeFlag, "runtime", "r", "", "Runtime for the configuration, e.g. terraform or tofu")
 	ConfigCmd.AddCommand(DisplayPorjectCmd)
 
 	// Destroy

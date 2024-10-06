@@ -1,30 +1,47 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/eunanio/nori/internal/console"
 	"github.com/eunanio/nori/internal/deployment"
 	"github.com/eunanio/nori/internal/futils"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
 var planCmd = &cobra.Command{
-	Use:   "plan",
+	Use:   "plan <tag>",
 	Short: "Plan a deployment",
 	Long:  `Plan a deployment of a module`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) != 1 {
+			console.Error("Invalid number of arguments")
+			return
+		}
+
 		tag, err := futils.ParseTagV2(args[0])
 		if err != nil {
-			fmt.Println("Error parsing tag: ", err.Error())
+			console.Error("Error: Invalid tag")
 		}
 		if valuesFileFlag == "" {
 			panic("values file required to plan deployments")
 		}
-		fmt.Println("Using values file: ", valuesFileFlag)
+
+		console.Debug("Values file: " + valuesFileFlag)
+
 		if !futils.FileExists(valuesFileFlag) {
-			fmt.Println("Error: Values file not found")
+			console.Error("Error: Values file not found")
 			return
+		}
+
+		if releaseFlag == "" {
+			uuid, err := uuid.NewV7()
+			if err != nil {
+				console.Error("Error: Unable to generate release ID")
+				return
+			}
+			releaseFlag = uuid.String()
 		}
 
 		opts := deployment.DeploymentOpts{
@@ -37,7 +54,7 @@ var planCmd = &cobra.Command{
 
 		err = deployment.Run(opts)
 		if err != nil {
-			fmt.Println(err.Error())
+			console.Error(err.Error())
 			os.Exit(1)
 		}
 

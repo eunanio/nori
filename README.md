@@ -1,7 +1,7 @@
 # Nori
-Nori allows you to package, distribute and deploy your Terraform modules. Nori creates oci compatible images that can be tagged and pushed to any container registry. such as AWS ECR, Github Packages or Docker Hub. With nori you can easily deploy any terraform module with a single command.
+Nori allows you to package, distribute and deploy your Terraform modules. with nori you can tag and distribute your terraform modules via any docker registry
 
-![cli](assets/deploy-demo.gif)
+![cli](assets/pack.apply.gif)
 
 ## Requirements
 - Go 1.21.5 or later
@@ -14,31 +14,22 @@ export PATH=$PATH:`go env GOPATH`/bin # Only needed if you havent set your GOPAT
 go install github.com/eunanio/nori@latest
 ```
 
-Setup your Nori configuration file by running the following command:
-```bash
-nori init
-```
-Setup your Nori config to use S3 as a backend:
-```bash
-nori init --backend s3://com.mycompany.terraform --backend-region eu-west-1
-```
-
 ### Package
 To package your Terraform module provide a valid tag and path to your module directory , run the following command:
 ```bash
-nori package --tag create-s3-bucket:v1 ./modules/s3-bucket
+nori package create-s3-bucket:v1 /modules/s3-bucket
 ```
 
 ### Plan
 Run the following command to create a preview of your module deployment:
 ```bash
-nori plan create-s3-bucket:v1 --values ./values.yml
+nori plan create-s3-bucket:v1 --values values.yml
 ```
 
 ### Deploy
 To Deploy your Terraform module, run the following command:
 ```bash
-nori deploy create-s3-bucket:v1 --values ./values.yml
+nori apply create-s3-bucket:v1 --values values.yml
 ```
 
 ## Documentation

@@ -5,55 +5,69 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/eunanio/nori/internal/e"
+	"github.com/eunanio/nori/internal/console"
 	"github.com/eunanio/nori/internal/futils"
 	"github.com/eunanio/nori/internal/oci"
 	"github.com/eunanio/nori/internal/paths"
 	"github.com/eunanio/nori/internal/spec"
 )
 
-func PullImage(tag *spec.Tag, export bool, ctxPath string) (*spec.Manifest, *spec.Config) {
+func PullImage(tag *spec.Tag, export bool, ctxPath string) (*spec.Manifest, *spec.Config, error) {
 
-	fmt.Printf("Pulling image: %s...\n", tag.String())
 	creds, _ := oci.GetCredentials(tag.Host)
-	//e.Resolve(err, "Error getting credentials")
 	manifest, err := futils.GetTaggedManifest(tag)
 	if err != nil {
-		e.Fatal(err, "Error getting manifest")
+		return nil, nil, err
 	}
+
 	reg := oci.NewRegistry(tag.Host, creds)
+	console.Debug(fmt.Sprint(manifest))
 	if manifest == nil {
+		console.Println("Pulling image...")
 		manifest, err := reg.PullManifest(tag)
-		e.Fatal(err, "Error pulling manifest")
+		if err != nil {
+			return nil, nil, fmt.Errorf("error pulling manifest: %s", err)
+		}
 
-		manifestBytes, err := manifest.Marshal()
-		e.Resolve(err, "Error marshalling manifest")
-		futils.WriteBlob(manifestBytes, spec.MEDIA_TYPE_MANIFEST)
+		manifestBytes, err := json.Marshal(manifest)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error marshalling manifest: %s", err)
+		}
+
+		_, err = futils.WriteBlob(manifestBytes, spec.MEDIA_TYPE_MANIFEST)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error writing manifest: %s", err)
+		}
+		console.Debug(fmt.Sprint(manifest))
+		pullLayers(reg, manifest, tag)
 	}
-	// os.WriteFile(manifestPath, manifestBytes, 0644)
-	pullLayers(reg, manifest, tag)
-	config, err := PullConfig(reg, manifest, tag)
-	e.Fatal(err, "Error pulling config")
+	console.Debug(fmt.Sprint(manifest))
 
-	fmt.Println("Image pulled successfully")
+	config, err := PullConfig(reg, manifest, tag)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error pulling config: %s", err)
+	}
+
 	if export {
-		fmt.Printf("Unpacking module into `%s/.nori/%s`...\n", ctxPath, tag.Name)
+		console.Debug(fmt.Sprintf("Unpacking module into `%s/.nori/%s`...\n", ctxPath, tag.Name))
 		createAndExport(manifest, ctxPath)
 	}
 
-	return manifest, config
+	return manifest, config, nil
 }
 
-func pullLayers(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag) {
-
+func pullLayers(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag) error {
+	console.Debug("layer manifest: " + fmt.Sprint(manifest))
 	for _, layer := range manifest.Layers {
 		sha := layer.Digest[7:]
 		layerPath := paths.GetBlobPathV2(sha)
 		if futils.FileExists(layerPath) {
-			fmt.Printf("%s: already exists\n", sha[:24])
+			console.Debug(fmt.Sprintf("%s: already exists\n", sha[:24]))
 			continue
 		}
-		fmt.Printf("%s: Pulling\n", layer.Digest[:24])
+
+		console.Debug(fmt.Sprintf("%s: Pulling\n", sha[:24]))
+
 		pullOpts := oci.PullBlobOptions{
 			Name:   tag.Name,
 			Digest: layer,
@@ -61,18 +75,24 @@ func pullLayers(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag) {
 		}
 
 		layerData, err := reg.PullBlob(pullOpts)
-		e.Resolve(err, "Error pulling layer")
+		if err != nil {
+			return fmt.Errorf("error pulling layer: %s", err)
+		}
 
 		_, err = futils.WriteBlob(layerData, spec.MEDIA_TYPE_MODULE_PRIMARY)
-		e.Fatal(err, "Error writing layer")
+		if err != nil {
+			return fmt.Errorf("error writing layer: %s", err)
+		}
 	}
+
+	return nil
 }
 
 func PullConfig(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag) (config *spec.Config, err error) {
 	sha := manifest.Config.Digest[7:]
 	configPath := paths.GetBlobPathV2(sha)
 	if futils.FileExists(configPath) {
-		fmt.Printf("%s: already exists\n", sha[:24])
+		console.Debug(fmt.Sprintf("%s: already exists\n", sha[:24]))
 		configBytes, err := os.ReadFile(configPath)
 		if err != nil {
 			return nil, err
@@ -85,7 +105,7 @@ func PullConfig(reg *oci.Registry, manifest *spec.Manifest, tag *spec.Tag) (conf
 		return config, nil
 	}
 	sha = manifest.Config.Digest[7:]
-	fmt.Printf("%s: Pulling\n", sha[:24])
+	console.Debug(fmt.Sprintf("%s: Pulling\n", sha[:24]))
 	pullOpts := oci.PullBlobOptions{
 		Name:   tag.Name,
 		Digest: manifest.Config,
@@ -129,7 +149,7 @@ func createAndExport(manifest *spec.Manifest, ctxPath string) {
 				panic(err)
 			}
 		} else {
-			fmt.Printf("%s: skipping\n", sha[:24])
+			console.Println(fmt.Sprintf("Skipping: %s\n", sha[:24]))
 		}
 	}
 

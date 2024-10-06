@@ -4,8 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"fmt"
 	"os/exec"
+
+	"github.com/eunanio/nori/internal/console"
 )
 
 type Cmd struct{}
@@ -68,15 +69,29 @@ func (c *Cmd) ExecuteWithStream(opts CmdArgs) error {
 		return err
 	}
 
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	scanner := bufio.NewScanner(stdout)
+	scannerErr := bufio.NewScanner(stderr)
 	for scanner.Scan() {
-		fmt.Println(scanner.Text())
+		console.Println(scanner.Text())
+	}
+
+	for scannerErr.Scan() {
+		console.Error(scannerErr.Text())
 	}
 
 	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	if err := scannerErr.Err(); err != nil {
 		return err
 	}
 

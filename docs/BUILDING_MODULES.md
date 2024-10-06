@@ -28,7 +28,7 @@ variable "tags" {
 ### Packaging your module
 To package your module, run the `nori package` command with the path to your module directory and a tag for your module:
 ```bash
-nori package --tag create-s3-bucket:v1.0.0 ./modules/s3-bucket
+nori package create-s3-bucket:v1.0.0 ./modules/s3-bucket
 ```
 This will create a deployable artifact that can be pushed to a container registry.
 
@@ -41,7 +41,7 @@ tags:
 ```
 
 ### Deploying your module
-To deploy your module, run the `nori deploy` command with the path to your packaged module and the path to your values file:
+To deploy your module, run the `nori apply <release_id> <tag>` command with the path to your packaged module and the path to your values file:
 ```bash
-nori deploy create-s3-bucket:v1.0.0 --values ./values.yaml
+nori apply test-bucket create-s3-bucket:v1.0.0 --values ./values.yaml
 ```

@@ -4,20 +4,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
-	"log/slog"
 	"os"
-	"regexp"
+	"time"
 
 	"github.com/eunanio/nori/internal/backend"
 	"github.com/eunanio/nori/internal/config"
+	"github.com/eunanio/nori/internal/console"
 	"github.com/eunanio/nori/internal/futils"
 	"github.com/eunanio/nori/internal/hcl"
 	"github.com/eunanio/nori/internal/paths"
 	"github.com/eunanio/nori/internal/pull"
 	"github.com/eunanio/nori/internal/spec"
 	"github.com/eunanio/nori/internal/tf"
-	"github.com/google/uuid"
 )
 
 const (
@@ -35,21 +33,8 @@ type DeploymentOpts struct {
 
 func Run(opts DeploymentOpts) error {
 	currentConfig := config.Load()
-	if opts.ReleaseId == "" {
-		deploymentId, err := uuid.NewV7()
-		if err != nil {
-			slog.Error(err.Error())
-			os.Exit(1)
-		}
-		opts.ReleaseId = fmt.Sprintf("%s/%s", currentConfig.Project, deploymentId)
-	}
-
-	re := regexp.MustCompile(`([^\/]+)\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$`)
-	matches := re.FindStringSubmatch(opts.ReleaseId)
-	if matches == nil {
-		return fmt.Errorf("invalid release ID")
-	}
-
+	projectId := currentConfig.Project
+	console.Debug("Project ID: " + projectId)
 	//tmpDir := fmt.Sprintf("./%s", opts.ReleaseId)
 	tmpDir := paths.GetReleasePath(opts.ReleaseId)
 	paths.MkDirIfNotExist(tmpDir)
@@ -57,13 +42,23 @@ func Run(opts DeploymentOpts) error {
 		defer cleanup(tmpDir)
 	}
 
-	_, config := pull.PullImage(opts.Tag, true, tmpDir)
+	_, config, err := pull.PullImage(opts.Tag, true, tmpDir)
+	if err != nil {
+		return err
+	}
+
+	if opts.ValuesPath == "" {
+		return fmt.Errorf("values file required to plan deployments")
+	}
+
 	values, err := futils.ParseValuesFile(opts.ValuesPath, config)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Generating Workspace...")
+	//out
+	console.Println("Generating Workspace...")
+
 	hcl.GenerateModuleBlock(opts.Tag.Name, tmpDir, values)
 	err = backend.GenerateBackendBlock(opts.ReleaseId)
 	if err != nil {
@@ -85,16 +80,18 @@ func Run(opts DeploymentOpts) error {
 		apply(tmpDir)
 	}
 	if opts.ApplyType == TYPE_APPLY {
-		fmt.Println("Release ID: ", opts.ReleaseId)
+		console.Success("Release ID: " + opts.ReleaseId)
 		valuesBytes, err := json.Marshal(values)
 		if err != nil {
 			return err
 		}
 
 		release := Release{
-			Id:     opts.ReleaseId,
-			Tag:    opts.Tag.String(),
-			Values: hex.EncodeToString(valuesBytes),
+			Id:        opts.ReleaseId,
+			Tag:       opts.Tag.String(),
+			Values:    hex.EncodeToString(valuesBytes),
+			Project:   projectId,
+			UpdatedAt: time.Now(),
 		}
 		err = UpdateOrCreateReleaseState(release)
 		if err != nil {
@@ -106,12 +103,6 @@ func Run(opts DeploymentOpts) error {
 }
 
 func Destory(releaseId string) error {
-	re := regexp.MustCompile(`([^\/]+)\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$`)
-	matches := re.FindStringSubmatch(releaseId)
-	if matches == nil {
-		return fmt.Errorf("invalid release ID")
-	}
-
 	tmpDir := paths.GetReleasePath(releaseId)
 	paths.MkDirIfNotExist(tmpDir)
 	if !futils.IsDebug() {
@@ -120,9 +111,7 @@ func Destory(releaseId string) error {
 
 	err := backend.GenerateBackendBlock(releaseId)
 	if err != nil {
-		if futils.IsDebug() {
-			fmt.Println(err.Error())
-		}
+		console.Error("Error generating backend block: " + err.Error())
 		return err
 	}
 	err = tf.Destroy(tmpDir)
@@ -139,19 +128,19 @@ func Destory(releaseId string) error {
 }
 
 func apply(path string) {
-	fmt.Println("Initiating Terraform Apply...")
+	console.Println("Applying...")
 	err := tf.Apply(path)
 	if err != nil {
-		log.Fatal("Runtime error occured", err.Error())
+		console.Error("Runtime error occured: " + err.Error())
 		return
 	}
 }
 
 func plan(path string) {
-	fmt.Println("Initiating Terraform Plan...")
+	console.Println("Planning...")
 	err := tf.Plan(path)
 	if err != nil {
-		log.Fatal("Runtime error occured", err.Error())
+		console.Error("Runtime error occured: " + err.Error())
 		return
 	}
 }
@@ -177,6 +166,7 @@ func copyProviderFile(tmpDir, providerPath string) error {
 }
 
 func cleanup(path string) {
-	fmt.Println("Cleaning up workspace...")
+	console.Success("Cleaning up workspace...")
 	os.RemoveAll(path)
+	console.Println("Done")
 }

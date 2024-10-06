@@ -15,7 +15,9 @@ import (
 	"os"
 
 	"github.com/eunanio/nori/internal/config"
+	"github.com/eunanio/nori/internal/console"
 	"github.com/eunanio/nori/internal/paths"
+	"github.com/eunanio/nori/internal/tf"
 	"github.com/spf13/cobra"
 )
 
@@ -24,29 +26,7 @@ var ConfigInitCmd = &cobra.Command{
 	Short: "Initialize nori configuration",
 	Long:  `Initialize nori configuration`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Do stuff here
-		configObj := config.Config{Runtime: "terraform", Project: "default"}
-		configPath := paths.GetConfigPath()
-		err := validateConfigFlags(&configObj)
-		if err != nil {
-			panic(err)
-		}
-
-		jsonBytes, err := json.MarshalIndent(configObj, "", "  ")
-		if err != nil {
-			panic("Error: Could not marshal config")
-		}
-		err = os.WriteFile(configPath, jsonBytes, 0644)
-		if err != nil {
-			panic("Error: Could not write config file")
-		}
-		if projectFlag != "" {
-			err = config.SetProject(projectFlag)
-			if err != nil {
-				panic(err)
-			}
-		}
-		fmt.Println("Nori configuration initialized successfully")
+		Bootstrap()
 	},
 }
 
@@ -68,6 +48,14 @@ var ConfigCmd = &cobra.Command{
 			if err != nil {
 				panic(err)
 			}
+		}
+
+		if configRuntimeFlag != "" {
+			err := config.SetRuntime(configRuntimeFlag)
+			if err != nil {
+				panic(err)
+			}
+			console.Println("Nori runtime updated")
 		}
 	},
 }
@@ -118,4 +106,38 @@ func validateConfigFlags(config *config.Config) error {
 
 	return nil
 
+}
+
+func Bootstrap() {
+	homePath := paths.GetHome()
+	if _, err := os.Stat(homePath); os.IsNotExist(err) {
+		// Do stuff here
+		runtimeDetected := tf.GetInstalledRuntime()
+		if runtimeDetected == "" {
+			console.Error("Could not detect runtime, please install terraform or opentofu")
+			return
+		}
+		configObj := config.Config{Runtime: runtimeDetected, Project: "default"}
+		configPath := paths.GetConfigPath()
+		err := validateConfigFlags(&configObj)
+		if err != nil {
+			panic(err)
+		}
+
+		jsonBytes, err := json.MarshalIndent(configObj, "", "  ")
+		if err != nil {
+			panic("Error: Could not marshal config")
+		}
+		err = os.WriteFile(configPath, jsonBytes, 0644)
+		if err != nil {
+			panic("Error: Could not write config file")
+		}
+		if projectFlag != "" {
+			err = config.SetProject(projectFlag)
+			if err != nil {
+				panic(err)
+			}
+		}
+		console.Println("Nori configuration initialized successfully")
+	}
 }

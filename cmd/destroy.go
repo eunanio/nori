@@ -3,26 +3,33 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/eunanio/nori/internal/console"
 	"github.com/eunanio/nori/internal/deployment"
 	"github.com/spf13/cobra"
 )
 
 var destroyCmd = &cobra.Command{
-	Use:   "destroy",
+	Use:   "destroy <release>",
 	Short: "Destory a release",
 	Long:  "Destory a release and its associated resources",
 	Run: func(cmd *cobra.Command, args []string) {
-		// Do Stuff Here
-		fmt.Println(args)
-		if len(args) == 0 {
-			fmt.Println("error: release ID required")
+
+		if len(args) != 1 {
+			console.Error("release ID required")
 			return
 		}
 
-		err := deployment.Destory(args[0])
+		releaseId := args[0]
+		ok := validateRelease(releaseId)
+		if !ok {
+			fmt.Println("error: invalid release ID")
+			return
+		}
+
+		err := deployment.Destory(releaseId)
 		if err != nil {
-			fmt.Println(err.Error())
-			panic(err)
+			console.Error("error: " + err.Error())
+			return
 		}
 	},
 }

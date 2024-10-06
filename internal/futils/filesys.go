@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/eunanio/nori/internal/console"
 	"github.com/eunanio/nori/internal/paths"
 	"github.com/eunanio/nori/internal/spec"
 	"gopkg.in/yaml.v2"
@@ -51,7 +52,7 @@ func ParseValuesFile(file string, config *spec.Config) (values map[string]interf
 			return nil, err
 		}
 	} else {
-		fmt.Println("Error: Unsupported values file type")
+		console.Error("Error: Unsupported values file type")
 		return nil, fmt.Errorf("unsupported values file type")
 	}
 	for key, val := range config.Inputs {

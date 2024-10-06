@@ -3,6 +3,7 @@ package deployment
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"encoding/json"
 
@@ -15,9 +16,11 @@ type ReleaseState struct {
 }
 
 type Release struct {
-	Id     string `json:"id"`
-	Tag    string `json:"tag"`
-	Values string `json:"values"`
+	Id        string    `json:"id"`
+	Tag       string    `json:"tag"`
+	Values    string    `json:"values"`
+	Project   string    `json:"project"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 func UpdateOrCreateReleaseState(release Release) error {
@@ -77,10 +80,10 @@ func ListReleases() {
 		return
 	}
 
-	fmt.Println("ID\t\t\t\t\t\t|\t Tag") // I know this is cursed
-
+	fmt.Println("RELEASE ID\t\t\t\tTAG\t\tUPDATED AT") // I know this is cursed
 	for _, release := range state.Releases {
-		fmt.Println(release.Id+"\t|\t", release.Tag)
+
+		fmt.Println(release.Id + "\t\t\t\t" + release.Tag + "\t\t" + release.UpdatedAt.Format("2006-01-02 15:04:05"))
 	}
 }
 

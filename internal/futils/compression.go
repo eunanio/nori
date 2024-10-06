@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/eunanio/nori/internal/console"
 	"github.com/eunanio/nori/internal/paths"
 	"github.com/eunanio/nori/internal/spec"
 )
@@ -28,7 +29,7 @@ func WriteBlob(data []byte, mediaType string) (*spec.Digest, error) {
 		return nil, fmt.Errorf("error writing blob: %s", err)
 	}
 
-	fmt.Printf("Writing: sha256:%s\n", hash)
+	console.Debug(fmt.Sprintf("Writing: sha256:%s\n", hash))
 	return &spec.Digest{MediaType: mediaType, Size: fileSize, Digest: "sha256:" + hash}, nil
 }
 
@@ -102,7 +103,6 @@ func CompressModule(src string, name string) ([]byte, error) {
 }
 
 func DecompressModule(tarBytes []byte, destPath string) error {
-	// Create a reader for the byte slice
 	byteReader := bytes.NewReader(tarBytes)
 	gzipReader, err := gzip.NewReader(byteReader)
 	if err != nil {
@@ -111,7 +111,6 @@ func DecompressModule(tarBytes []byte, destPath string) error {
 	defer gzipReader.Close()
 	tarReader := tar.NewReader(gzipReader)
 
-	// Iterate over the tar file entries
 	for {
 		header, err := tarReader.Next()
 		if err == io.EOF {
@@ -121,12 +120,10 @@ func DecompressModule(tarBytes []byte, destPath string) error {
 			return fmt.Errorf("error reading tar archive: %w", err)
 		}
 
-		// Create the full path for the file or directory
 		target := filepath.Join(destPath, header.Name)
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			// Create directory if it doesn't exist
 			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
 				return fmt.Errorf("error creating directory: %w", err)
 			}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/eunanio/nori/internal/console"
 	"github.com/eunanio/nori/internal/futils"
 	"github.com/eunanio/nori/internal/hcl"
 	"github.com/eunanio/nori/internal/spec"
@@ -46,7 +47,7 @@ func PackageModuleV2(tag *spec.Tag, packagePathFlag string) error {
 		return fmt.Errorf("error creating or updating index: %s", err)
 	}
 
-	fmt.Println("Module packaged with tag: ", tag.String())
+	console.Println(fmt.Sprintf("Module packaged with tag: %s", tag.String()))
 
 	return nil
 }
@@ -95,7 +96,7 @@ func validatePackageFlags(packageFlag string, pathFlag string) {
 func generateConfig(data *hcl.ModuleConfig, tag *spec.Tag) (*spec.Digest, error) {
 	var inputs = make(map[string]spec.ModuleInputs)
 	var outputs = make(map[string]spec.ModuleOutputs)
-	var resources []string
+	var resources = make(map[string]int)
 	for _, value := range data.Inputs {
 		var input = spec.ModuleInputs{
 			Description: value.Description,
@@ -113,7 +114,12 @@ func generateConfig(data *hcl.ModuleConfig, tag *spec.Tag) (*spec.Digest, error)
 	}
 
 	for _, value := range data.Resources {
-		resources = append(resources, value.Type)
+		if _, ok := resources[value.Type]; !ok {
+			resources[value.Type] = 1
+			continue
+		}
+
+		resources[value.Type]++
 	}
 
 	config := spec.Config{
