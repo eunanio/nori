@@ -1,4 +1,9 @@
-# Usage
+# Init
+config to use S3 as a backend as a alternative to local backend:
+```bash
+nori init --backend s3://com.mycompany.terraform --backend-region eu-west-1
+```
+
 ### Login
 Example of login to a AWS ECR registry:
 ```bash
@@ -13,7 +18,7 @@ nori login --username AWS --password $(aws ecr get-login-password --region eu-we
 ### Plan
 To create a preview of your module deployment, run the following command:
 ```bash
-nori plan 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1 --values ./values.yaml
+nori plan create-s3-bucket:v1 --values ./values.yaml
 ```
 | Flag | Description |
 | --- | --- |
@@ -21,31 +26,29 @@ nori plan 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1 --val
 | --release | The release id of the deployment to update |
 | --provider | The path to the provider file |
 
-### Deploy
+### Apply
 To Deploy your Terraform module, run the following command:
 ```bash
-nori deploy 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1 --values ./values.yaml
-```
-
-Update an existing deployment by supplying the release id with updated values:
-```bash
-nori deploy 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1 --values ./values.yaml --release 01902d34-fdac-7874-bbdc-948ac43322bc
+nori apply test-bucket create-s3-bucket:v1 --values ./values.yaml
 ```
 
 | Flag | Description |
 | --- | --- |
 | --values | The path to the values file |
-| --release | The release id of the deployment to update |
 | --provider | The path to the provider file |
 
 ### Package
 To package your Terraform module provide a valid tag and path to your module directory, tags that do not include a remote host will be considered local only e.g. `create-s3-bucket:v1` , run the following command:
 ```bash
-nori package --tag 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1 ./modules/s3-bucket
+nori package create-s3-bucket:v1 ./modules/s3-bucket
 ```
-| Flag | Description |
-| --- | --- |
-| --tag | The tag to assign to the packaged module |
+
+### Tag
+Use tag to rename a module in the local registry:
+```bash
+nori tag create-s3-bucket:v1 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v2
+```
+
 ### Push
 To push your packaged module to a container registry, run the following command:
 ```bash
@@ -64,12 +67,6 @@ nori pull 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1
 | Flag | Description |
 | --- | --- |
 | --create | Exports the pulled image to the local working directory |
-
-### Tag
-Use tag to rename a module in the local registry:
-```bash
-nori tag create-s3-bucket:v1 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v2
-```
 
 ## List Packages
 List all local packages
@@ -101,7 +98,7 @@ nori release list
 ```
 
 ## Destorying Resoruces
-Destorys the state for all resources in a release. release id is made of two parts `<project>/<uuid>`
+Destorys the state for all resources in a release.
 ```bash
-nori destroy storage/01913dd7-c2f2-7d64-b235-263d0f630209
+nori destroy test-bucket
 ```

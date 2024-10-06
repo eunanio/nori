@@ -46,6 +46,13 @@ func TestParsing(t *testing.T) {
 		}
 	`
 
+	const TYPE_VAR_MAP_EMPTY = `
+		variable "sample_map" {
+			type = map(string)
+			default = {}
+		}
+	`
+
 	t.Run("Test input of string type", func(t *testing.T) {
 		// TestVariableParsing tests the parsing of variables from a module
 		// config file
@@ -92,6 +99,16 @@ func TestParsing(t *testing.T) {
 	t.Run("Test input of bool type", func(t *testing.T) {
 		var moduleConfig ModuleConfig
 		err := ParseHCLBytes([]byte(TYPE_DEFAULT_BOOL), &moduleConfig)
+		if err != nil {
+			t.Error(err)
+		}
+		assert.Equal(t, 1, len(moduleConfig.Inputs))
+		assert.Nil(t, err)
+	})
+
+	t.Run("Test input of empty map type", func(t *testing.T) {
+		var moduleConfig ModuleConfig
+		err := ParseHCLBytes([]byte(TYPE_VAR_MAP_EMPTY), &moduleConfig)
 		if err != nil {
 			t.Error(err)
 		}

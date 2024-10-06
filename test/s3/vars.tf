@@ -6,7 +6,7 @@ variable "bucket_name" {
 variable "tags" {
   type        = map(string)
   default = {
-    Env = "dev"
-    Team = "backend"
+    Name        = "My bucket"
+    Environment = "Dev"
   }
 }

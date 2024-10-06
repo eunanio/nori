@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/eunanio/nori/internal/e"
 	"github.com/eunanio/nori/internal/futils"
 	"github.com/eunanio/nori/internal/oci"
 	"github.com/eunanio/nori/internal/pull"
@@ -16,7 +15,7 @@ func GetImageInfo(tag *spec.Tag) {
 	//e.Resolve(err, "Error getting credentials")
 	manifest, err := futils.GetTaggedManifest(tag)
 	if err != nil {
-		e.Fatal(err, "Unable to get a Package")
+		panic(err)
 	}
 	reg := oci.NewRegistry(tag.Host, creds)
 	if manifest == nil {

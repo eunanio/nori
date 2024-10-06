@@ -35,12 +35,12 @@ func Plan(path string) error {
 	}
 	err := exe.ExecuteWithStream(init_opts)
 	if err != nil {
-		return err
+		return fmt.Errorf("error init: %s", err)
 	}
 
 	err = exe.ExecuteWithStream(plan_opts)
 	if err != nil {
-		return err
+		return fmt.Errorf("error plan: %s", err)
 	}
 
 	return nil

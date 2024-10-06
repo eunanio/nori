@@ -11,6 +11,11 @@ import (
 func ListPackages() error {
 	// list all the images
 	var moduleMap ModuleMap
+	if !FileExists(paths.GetModuleMapPath()) {
+		fmt.Println("No packages found")
+		return nil
+	}
+
 	data, err := os.ReadFile(paths.GetModuleMapPath())
 	if err != nil {
 		return err
@@ -22,7 +27,7 @@ func ListPackages() error {
 	}
 
 	if len(moduleMap.Modules) > 0 {
-		fmt.Println("--- Packages ---")
+		fmt.Println("\tPACKAGES")
 		for k, _ := range moduleMap.Modules {
 			fmt.Println(k)
 		}

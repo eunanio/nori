@@ -91,3 +91,13 @@ func MkDirIfNotExist(dir string) error {
 	}
 	return nil
 }
+
+func GetHome() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Println("Error getting user home directory: ", err)
+		return ""
+	}
+	homePath := fmt.Sprintf(TLP_HOME_DIR, homeDir)
+	return homePath
+}

@@ -64,6 +64,41 @@ func SetProject(project string) error {
 	return nil
 }
 
+func SetRuntime(runtime string) error {
+	configPath := paths.GetConfigPath()
+	if !futils.FileExists(configPath) {
+		return fmt.Errorf("config file does not exist, ensure you have run nori init?")
+	}
+
+	configBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("error reading config file: %s", err)
+	}
+
+	var config Config
+	err = json.Unmarshal(configBytes, &config)
+	if err != nil {
+		return fmt.Errorf("error unmarshalling config file: %s", err)
+	}
+
+	if runtime != "terraform" && runtime != "opentofu" {
+		return fmt.Errorf("invalid runtime specified")
+	}
+
+	config.Runtime = runtime
+	configBytes, err = json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshalling config: %s", err)
+	}
+
+	err = os.WriteFile(configPath, configBytes, 0644)
+	if err != nil {
+		return fmt.Errorf("error writing config file: %s", err)
+	}
+
+	return nil
+}
+
 func SetBackendConfig(remote, region *string) error {
 
 	configPath := paths.GetConfigPath()

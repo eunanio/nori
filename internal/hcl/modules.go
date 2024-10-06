@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/eunanio/nori/internal/console"
 	"github.com/eunanio/nori/internal/spec"
 	"github.com/hashicorp/hcl/v2/hclsimple"
 	"github.com/zclconf/go-cty/cty"
@@ -13,17 +14,6 @@ import (
 )
 
 func GenerateModuleBlock(name, path string, attrs map[string]interface{}) {
-	// if len(attrs) != 0 {
-	// 	for key, value := range attrs {
-	// 		switch v := value.(type) {
-	// 		case map[interface{}]interface{}:
-	// 			attrs[key] = convertMapKeysToStrings(v)
-	// 		case []interface{}:
-	// 			attrs[key] = convertSliceKeysToStrings(v)
-	// 		}
-	// 	}
-	// }
-
 	modules := make(map[string]interface{})
 	root := make(map[string]interface{})
 	attrs["source"] = fmt.Sprintf("./.nori/%s", name)
@@ -31,8 +21,9 @@ func GenerateModuleBlock(name, path string, attrs map[string]interface{}) {
 	root["module"] = modules
 	jsonBytes, err := json.Marshal(root)
 	if err != nil {
-		panic("Parsing attr Error:" + err.Error())
+		console.Error(fmt.Sprintf("error parsing module: %s", err))
 	}
+
 	err = os.WriteFile(fmt.Sprintf("%s/%s", path, "main.tf.json"), jsonBytes, 0644)
 	if err != nil {
 		panic(err)
@@ -67,13 +58,13 @@ func GenerateOutputsBlock(moduleName string, path string, outputs map[string]spe
 	root["output"] = outputsMap
 	jsonBytes, err := json.Marshal(root)
 	if err != nil {
-		fmt.Println("Error marshalling outputs: ", err)
+		console.Error(fmt.Sprintf("error parsing outputs: %s", err))
 		os.Exit(1)
 	}
 
 	err = os.WriteFile(fmt.Sprintf("%s/outputs.tf.json", path), jsonBytes, 0644)
 	if err != nil {
-		fmt.Println("Error writing outputs: ", err)
+		console.Error(fmt.Sprintf("error writing outputs: %s", err))
 		os.Exit(1)
 	}
 }
@@ -115,6 +106,7 @@ func ParseHCLBytes(bytes []byte, moduleConfig *ModuleConfig) error {
 	for idx, input := range fileConfig.Inputs {
 		if input.Default != nil {
 			d := input.Default
+			console.Debug(fmt.Sprintf("default: %v, input: %s", d, input.Name))
 			value, err := decodeHCLValue(*d)
 			if err != nil {
 				return err
@@ -158,7 +150,7 @@ func decodeHCLValue(value cty.Value) (interface{}, error) {
 			return b, nil
 
 		default:
-			return nil, fmt.Errorf("unsupported type: %v", value.Type())
+			return nil, fmt.Errorf("unsupported primitive type: %v", value.Type())
 		}
 	}
 
@@ -174,8 +166,11 @@ func decodeHCLValue(value cty.Value) (interface{}, error) {
 		return values, nil
 	}
 
+	if value.IsNull() || (value.Type().IsMapType() && len(value.AsValueMap()) == 0) {
+		return map[string]interface{}{}, nil
+	}
+
 	if value.Type().IsMapType() {
-		fmt.Println("testtest")
 		m := make(map[string]interface{})
 		err := gocty.FromCtyValue(value, &m)
 		if err != nil {
@@ -195,8 +190,8 @@ func decodeHCLValue(value cty.Value) (interface{}, error) {
 		}
 		return m, nil
 	}
-
-	return nil, fmt.Errorf("unsupported type: %v", value.Type())
+	console.Debug(fmt.Sprintf("value type: %v", value.Type()))
+	return nil, fmt.Errorf("unsupported complex type: %v", value.Type())
 
 }
 

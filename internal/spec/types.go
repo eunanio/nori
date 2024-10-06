@@ -60,7 +60,7 @@ type Config struct {
 	Name          string                   `json:"name"`
 	Version       string                   `json:"version"`
 	Remote        string                   `json:"remote,omitempty"`
-	Resources     []string                 `json:"resources,omitempty"`
+	Resources     map[string]int           `json:"resources,omitempty"`
 	Inputs        map[string]ModuleInputs  `json:"inputs,omitempty"`
 	Outputs       map[string]ModuleOutputs `json:"outputs,omitempty"`
 }
