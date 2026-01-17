@@ -1,0 +1,437 @@
+package commands
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/eunanio/nori/pkg/codegen"
+	"github.com/eunanio/nori/pkg/deploy"
+	"github.com/eunanio/nori/pkg/release"
+	"github.com/eunanio/nori/pkg/state"
+	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+)
+
+type upgradeOptions struct {
+	valuesFile    string
+	values        []string
+	tag           string // New module tag/version
+	annotations   []string
+	autoApprove   bool
+	parallelism   int
+	varFiles      []string
+	backendConfig []string
+	targets       []string
+	planOnly      bool
+	upgradeInit   bool
+	reuseValues   bool
+	resetValues   bool
+	description   string
+	version       string // Override version
+}
+
+func newReleaseUpgradeCommand() *cobra.Command {
+	opts := &upgradeOptions{}
+
+	cmd := &cobra.Command{
+		Use:   "upgrade <release_name> [module-reference]",
+		Short: "Upgrade an existing release",
+		Long: `Upgrade an existing release with new values or a new module version.
+
+This command updates an existing release. You can:
+- Update values only (keeping the same module version)
+- Update to a new module version using -t flag or positional argument
+- Combine both
+- Add or update annotations
+
+The release state is pulled from OCI, updated, and pushed back after successful deployment.
+
+Examples:
+  # Upgrade with new values (same module version)
+  nori release upgrade my-bucket -f values.yaml
+
+  # Upgrade to a new module version using -t flag
+  nori release upgrade my-bucket -t v2.0.0 -f values.yaml
+
+  # Upgrade to a new module version (full reference)
+  nori release upgrade my-bucket ghcr.io/myorg/s3-bucket:v2.0.0
+
+  # Upgrade with inline values
+  nori release upgrade my-bucket --set bucket_name=new-bucket
+
+  # Upgrade and add annotations
+  nori release upgrade my-bucket -f values.yaml --annotation release-notes="Fixed bug"
+
+  # Upgrade and reuse previous values (merge with new)
+  nori release upgrade my-bucket -f values.yaml --reuse-values
+
+  # Upgrade and reset to default values
+  nori release upgrade my-bucket -f values.yaml --reset-values`,
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUpgrade(cmd, args, opts)
+		},
+	}
+
+	cmd.Flags().StringVarP(&opts.valuesFile, "values", "f", "", "Path to values.yaml file")
+	cmd.Flags().StringArrayVar(&opts.values, "set", nil, "Set values on the command line (key=value)")
+	cmd.Flags().StringVarP(&opts.tag, "tag", "t", "", "New module tag/version to upgrade to")
+	cmd.Flags().StringArrayVar(&opts.annotations, "annotation", nil, "Add or update annotations (key=value)")
+	cmd.Flags().BoolVar(&opts.autoApprove, "auto-approve", false, "Automatically approve apply")
+	cmd.Flags().IntVar(&opts.parallelism, "parallelism", 10, "Number of parallel operations")
+	cmd.Flags().StringArrayVar(&opts.varFiles, "var-file", nil, "Additional var files")
+	cmd.Flags().StringArrayVar(&opts.backendConfig, "backend-config", nil, "Backend configuration (key=value)")
+	cmd.Flags().StringArrayVar(&opts.targets, "target", nil, "Specific resources to target")
+	cmd.Flags().BoolVar(&opts.planOnly, "plan-only", false, "Only create plan, don't apply")
+	cmd.Flags().BoolVar(&opts.upgradeInit, "upgrade", false, "Upgrade providers during init")
+	cmd.Flags().BoolVar(&opts.reuseValues, "reuse-values", false, "Reuse the last release's values and merge with new ones")
+	cmd.Flags().BoolVar(&opts.resetValues, "reset-values", false, "Reset values to the defaults")
+	cmd.Flags().StringVar(&opts.description, "description", "", "Description for this release version")
+	cmd.Flags().StringVar(&opts.version, "version", "", "Override the release version (default: auto-increment)")
+
+	return cmd
+}
+
+func runUpgrade(cmd *cobra.Command, args []string, opts *upgradeOptions) error {
+	ctx := cmd.Context()
+	releaseName := args[0]
+
+	// Optional new module reference (positional or via -t flag)
+	var newModuleRef string
+	if len(args) > 1 {
+		newModuleRef = args[1]
+	}
+
+	log := getLogger()
+	cfg := getConfig()
+
+	// Get state repository
+	stateRepo, err := cfg.GetStateRepository()
+	if err != nil {
+		return fmt.Errorf("state repository not configured: %w\nRun: nori config set state_repository <oci-repo>", err)
+	}
+
+	// Create state store
+	stateStore := state.NewStateStore(getClient(), log)
+
+	// Get the latest version of the release from OCI
+	latestVersion, err := stateStore.GetLatestVersion(ctx, stateRepo, releaseName)
+	if err != nil {
+		return fmt.Errorf("release %q not found in state repository: %w", releaseName, err)
+	}
+
+	// Pull existing state (flat format: repo:releaseName-version)
+	stateRef := fmt.Sprintf("%s:%s", stateRepo, state.FormatReleaseTag(releaseName, latestVersion))
+	existingState, err := stateStore.PullState(ctx, stateRef)
+	if err != nil {
+		return fmt.Errorf("failed to pull release state: %w", err)
+	}
+
+	log.Info("upgrading release",
+		"name", releaseName,
+		"from_version", existingState.Metadata.Version,
+		"module", existingState.Metadata.ModuleRef,
+	)
+
+	// Determine if module is changing
+	moduleChanged := false
+	moduleRef := existingState.Metadata.ModuleRef
+
+	if newModuleRef != "" {
+		moduleRef = newModuleRef
+		moduleChanged = true
+	} else if opts.tag != "" {
+		// Update the tag on the existing module reference
+		// Extract base reference and replace tag
+		moduleRef = updateModuleTag(existingState.Metadata.ModuleRef, opts.tag)
+		moduleChanged = moduleRef != existingState.Metadata.ModuleRef
+	}
+
+	// Determine new version
+	var newVersion string
+	if opts.version != "" {
+		newVersion = state.EnsureVPrefix(opts.version)
+	} else {
+		newVersion, err = state.NextVersion(existingState.Metadata.Version, moduleChanged)
+		if err != nil {
+			return fmt.Errorf("failed to calculate next version: %w", err)
+		}
+	}
+
+	// Determine base values
+	var baseValues map[string]interface{}
+	if opts.resetValues {
+		baseValues = make(map[string]interface{})
+	} else if opts.reuseValues || opts.valuesFile == "" {
+		// Parse existing values
+		if len(existingState.Values) > 0 {
+			if err := yaml.Unmarshal(existingState.Values, &baseValues); err != nil {
+				log.Warn("failed to parse existing values", "error", err)
+				baseValues = make(map[string]interface{})
+			}
+		} else {
+			baseValues = make(map[string]interface{})
+		}
+	} else {
+		baseValues = make(map[string]interface{})
+	}
+
+	// Load values from file
+	var valuesYAML []byte
+	if opts.valuesFile != "" {
+		data, err := os.ReadFile(opts.valuesFile)
+		if err != nil {
+			return fmt.Errorf("failed to read values file: %w", err)
+		}
+		fileValues := make(map[string]interface{})
+		if err := yaml.Unmarshal(data, &fileValues); err != nil {
+			return fmt.Errorf("failed to parse values file: %w", err)
+		}
+		for k, v := range fileValues {
+			baseValues[k] = v
+		}
+		valuesYAML = data
+	}
+
+	// Parse inline values (highest precedence)
+	for _, v := range opts.values {
+		key, value, err := parseValue(v)
+		if err != nil {
+			return err
+		}
+		baseValues[key] = value
+	}
+
+	// Re-marshal values if we have inline values
+	if len(opts.values) > 0 || (opts.reuseValues && opts.valuesFile != "") {
+		valuesYAML, _ = yaml.Marshal(baseValues)
+	} else if valuesYAML == nil && len(existingState.Values) > 0 {
+		valuesYAML = existingState.Values
+	}
+
+	// Parse annotations
+	annotations := make(map[string]string)
+	// Copy existing annotations
+	for k, v := range existingState.Metadata.Annotations {
+		annotations[k] = v
+	}
+	// Add/update new annotations
+	for _, a := range opts.annotations {
+		key, value, err := parseAnnotation(a)
+		if err != nil {
+			return fmt.Errorf("invalid annotation: %w", err)
+		}
+		annotations[key] = value
+	}
+
+	// Parse backend config
+	backendConfig := make(map[string]string)
+	for _, bc := range opts.backendConfig {
+		key, value, err := parseAnnotation(bc)
+		if err != nil {
+			return fmt.Errorf("invalid backend config: %w", err)
+		}
+		backendConfig[key] = value
+	}
+
+	// Create local release for deployment
+	rel := release.NewRelease(releaseName, moduleRef)
+	rel.Values = baseValues
+	rel.ValuesFile = opts.valuesFile
+	rel.BackendConfig = backendConfig
+	rel.Annotations = annotations
+	rel.SemVer = newVersion
+
+	// Create local release store
+	localStore := release.NewStore("")
+
+	// Write existing terraform state if we have it
+	if len(existingState.TFState) > 0 {
+		moduleDir := localStore.GetModuleDir(releaseName)
+		if err := os.MkdirAll(moduleDir, 0755); err != nil {
+			return fmt.Errorf("failed to create module directory: %w", err)
+		}
+		tfStatePath := filepath.Join(moduleDir, "terraform.tfstate")
+		if err := os.WriteFile(tfStatePath, existingState.TFState, 0644); err != nil {
+			log.Warn("failed to restore terraform state", "error", err)
+		}
+	}
+
+	// Save release locally
+	if err := localStore.Save(rel); err != nil {
+		return fmt.Errorf("failed to save release: %w", err)
+	}
+
+	// Generate main.tf using codegen
+	mainTF := codegen.GenerateMainTF(
+		&codegen.ModuleConfig{
+			Name:   releaseName,
+			Source: moduleRef,
+			Values: baseValues,
+		},
+		nil,
+	)
+
+	// Write main.tf to module directory before deployment
+	moduleDir := localStore.GetModuleDir(releaseName)
+	if err := os.MkdirAll(moduleDir, 0755); err != nil {
+		return fmt.Errorf("failed to create module directory: %w", err)
+	}
+	mainTFPath := filepath.Join(moduleDir, "main.tf")
+	if err := os.WriteFile(mainTFPath, mainTF, 0644); err != nil {
+		return fmt.Errorf("failed to write main.tf: %w", err)
+	}
+	log.Debug("wrote main.tf", "path", mainTFPath)
+
+	// Create deployer
+	deployer := deploy.NewDeployer(getClient(), "tofu", log)
+
+	// Deploy (upgrade)
+	result, err := deployer.DeployRelease(ctx, rel, localStore, deploy.ReleaseDeployOptions{
+		AutoApprove: opts.autoApprove,
+		Parallelism: opts.parallelism,
+		VarFiles:    opts.varFiles,
+		Targets:     opts.targets,
+		PlanOnly:    opts.planOnly,
+		Upgrade:     opts.upgradeInit,
+		Reconfigure: true,
+	})
+
+	if err != nil {
+		rel.Status = release.StatusFailed
+		localStore.Save(rel)
+
+		// Push failed state to OCI if apply was attempted and terraform state exists
+		// This ensures resources are never left stateless after partial apply failures
+		if result != nil && result.ApplyAttempted && len(result.TFState) > 0 {
+			newStateRef, pushErr := pushReleaseState(ctx, stateStore, stateRepo, PushStateParams{
+				ReleaseName: releaseName,
+				ModuleRef:   moduleRef,
+				Version:     newVersion,
+				Status:      state.StatusFailed,
+				MainTF:      mainTF,
+				TFState:     result.TFState,
+				Values:      valuesYAML,
+				Description: opts.description,
+				Annotations: annotations,
+			}, log)
+			if pushErr != nil {
+				log.Warn("failed to push failed release state", "error", pushErr)
+			} else {
+				rel.StateRef = newStateRef
+				localStore.Save(rel)
+				fmt.Printf("\nNOTE: Failed release state pushed to OCI for recovery: %s\n", newStateRef)
+			}
+		}
+
+		return fmt.Errorf("upgrade failed: %w", err)
+	}
+
+	// Update release status
+	if result.Applied {
+		rel.Status = release.StatusDeployed
+	}
+	if err := localStore.Save(rel); err != nil {
+		log.Warn("failed to update release status", "error", err)
+	}
+
+	// Push state to OCI if deployment was successful
+	if !opts.planOnly && result.Applied {
+		newStateRef, pushErr := pushReleaseState(ctx, stateStore, stateRepo, PushStateParams{
+			ReleaseName: releaseName,
+			ModuleRef:   moduleRef,
+			Version:     newVersion,
+			Status:      state.StatusDeployed,
+			MainTF:      mainTF,
+			TFState:     result.TFState,
+			Values:      valuesYAML,
+			Description: opts.description,
+			Annotations: annotations,
+		}, log)
+		if pushErr != nil {
+			log.Warn("failed to push release state", "error", pushErr)
+			fmt.Printf("\nWARNING: Release upgraded but state push failed: %v\n", pushErr)
+		} else {
+			rel.StateRef = newStateRef
+			localStore.Save(rel)
+		}
+	}
+
+	// Print result
+	fmt.Printf("\n")
+	if opts.planOnly {
+		fmt.Printf("NAME: %s\n", rel.Name)
+		fmt.Printf("STATUS: planned\n")
+		fmt.Printf("VERSION: %s -> %s\n", existingState.Metadata.Version, newVersion)
+		fmt.Printf("PLAN: %s\n", result.PlanFile)
+		if !result.HasChanges {
+			fmt.Printf("\nNo changes detected. Infrastructure is up-to-date.\n")
+		} else {
+			fmt.Printf("\nTo apply this plan, run:\n")
+			fmt.Printf("  nori upgrade %s --auto-approve\n", releaseName)
+		}
+	} else if !result.HasChanges {
+		fmt.Printf("NAME: %s\n", rel.Name)
+		fmt.Printf("STATUS: no changes\n")
+		fmt.Printf("VERSION: %s (unchanged)\n", existingState.Metadata.Version)
+		fmt.Printf("MODULE: %s\n", rel.ModuleRef)
+		fmt.Printf("\nNo changes detected. Infrastructure is up-to-date.\n")
+	} else {
+		fmt.Printf("NAME: %s\n", rel.Name)
+		fmt.Printf("STATUS: %s\n", rel.Status)
+		fmt.Printf("VERSION: %s -> %s\n", existingState.Metadata.Version, newVersion)
+		fmt.Printf("MODULE: %s\n", rel.ModuleRef)
+
+		if rel.StateRef != "" {
+			fmt.Printf("STATE: %s\n", rel.StateRef)
+		}
+
+		if len(rel.Annotations) > 0 {
+			fmt.Printf("\nANNOTATIONS:\n")
+			for k, v := range rel.Annotations {
+				fmt.Printf("  %s: %s\n", k, v)
+			}
+		}
+
+		if len(result.Outputs) > 0 {
+			fmt.Printf("\nOUTPUTS:\n")
+			for k, v := range result.Outputs {
+				fmt.Printf("  %s: %v\n", k, v)
+			}
+		}
+	}
+
+	return nil
+}
+
+// updateModuleTag updates the tag portion of a module reference.
+// Example: "ghcr.io/org/module:v1.0.0" with tag "v2.0.0" -> "ghcr.io/org/module:v2.0.0"
+func updateModuleTag(moduleRef, newTag string) string {
+	// Find the last colon that's part of the tag (not the port)
+	lastColon := -1
+	for i := len(moduleRef) - 1; i >= 0; i-- {
+		if moduleRef[i] == ':' {
+			// Check if this looks like a tag (no slashes after it)
+			hasSlash := false
+			for j := i + 1; j < len(moduleRef); j++ {
+				if moduleRef[j] == '/' {
+					hasSlash = true
+					break
+				}
+			}
+			if !hasSlash {
+				lastColon = i
+				break
+			}
+		}
+	}
+
+	if lastColon == -1 {
+		// No tag found, append the new tag
+		return moduleRef + ":" + newTag
+	}
+
+	// Replace the existing tag
+	return moduleRef[:lastColon+1] + newTag
+}

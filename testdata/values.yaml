@@ -1,0 +1,12 @@
+# Example values file for deploying the S3 bucket module
+bucket_name: my-test-bucket-eh123828323218198919
+# versioning_enabled: true
+# encryption_enabled: true
+# block_public_access: true
+# force_destroy: true
+
+tags:
+  Environment: development
+  Project: nori-test
+  ManagedBy: nori
+

@@ -1,0 +1,15 @@
+# Example values file for the random-resources module
+# Used for E2E integration testing
+
+password_length: 24
+password_special: true
+string_length: 12
+pet_prefix: "test"
+pet_separator: "-"
+resource_count: 3
+
+tags:
+  Environment: testing
+  Project: nori-e2e
+  ManagedBy: nori
+

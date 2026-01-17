@@ -1,0 +1,52 @@
+name: 'Nori Package'
+description: 'Package and push Terraform/OpenTofu modules as OCI artifacts'
+author: 'eunanio'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  registry:
+    description: 'OCI registry hostname (e.g., ghcr.io, docker.io)'
+    required: true
+  repository:
+    description: 'Repository path within the registry (e.g., myorg/my-module)'
+    required: true
+  tag:
+    description: 'Version tag for the module (e.g., v1.0.0, latest)'
+    required: true
+  module-path:
+    description: 'Path to module archive (.zip, .tar.gz) or directory to package'
+    required: true
+  description:
+    description: 'Module description to include in OCI annotations'
+    required: false
+    default: ''
+  annotations:
+    description: 'Custom OCI annotations as JSON object (e.g., {"key": "value"})'
+    required: false
+    default: '{}'
+  insecure:
+    description: 'Allow insecure (HTTP) registry connections'
+    required: false
+    default: 'false'
+
+outputs:
+  reference:
+    description: 'Full OCI reference of the pushed artifact (registry/repository:tag)'
+  digest:
+    description: 'SHA256 digest of the pushed artifact'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.registry }}
+    - ${{ inputs.repository }}
+    - ${{ inputs.tag }}
+    - ${{ inputs.module-path }}
+    - ${{ inputs.description }}
+    - ${{ inputs.annotations }}
+    - ${{ inputs.insecure }}
+

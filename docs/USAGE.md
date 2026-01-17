@@ -1,104 +1,461 @@
-# Init
-config to use S3 as a backend as a alternative to local backend:
+# Nori Usage Guide
+
+This guide provides detailed instructions for using Nori to manage OpenTofu modules as OCI artifacts with release management.
+
+## Table of Contents
+
+1. [Getting Started](#getting-started)
+2. [Configuration](#configuration)
+3. [Packaging Modules](#packaging-modules)
+4. [Registry Authentication](#registry-authentication)
+5. [Release Management](#release-management)
+6. [Working with Registries](#working-with-registries)
+7. [Advanced Usage](#advanced-usage)
+
+## Getting Started
+
+### Installation
+
 ```bash
-nori init --backend s3://com.mycompany.terraform --backend-region eu-west-1
+# Build from source
+git clone https://github.com/eunanio/nori.git
+cd nori
+make build
+
+# Add to PATH
+export PATH=$PATH:$(pwd)/bin
 ```
 
-### Login
-Example of login to a AWS ECR registry:
-```bash
-nori login --username AWS --password $(aws ecr get-login-password --region eu-west-1) 123456789012.dkr.ecr.eu-west-1.amazonaws.com
-```
-| Flag | Description |
-| --- | --- |
-| --username | The username to authenticate with the registry |
-| --password | The password to authenticate with the registry |
-| --password-stdin | Take the password from stdin |
+### Basic Workflow
 
-### Plan
-To create a preview of your module deployment, run the following command:
-```bash
-nori plan create-s3-bucket:v1 --values ./values.yaml
-```
-| Flag | Description |
-| --- | --- |
-| --values | The path to the values file |
-| --release | The release id of the deployment to update |
-| --provider | The path to the provider file |
+Nori provides release management for OpenTofu modules stored in OCI registries:
 
-### Apply
-To Deploy your Terraform module, run the following command:
-```bash
-nori apply test-bucket create-s3-bucket:v1 --values ./values.yaml
-```
+1. **Package** your OpenTofu module as an OCI artifact
+2. **Create a release** to deploy the module with values
+3. **Upgrade releases** with new values or module versions
+4. **Track release history** stored in OCI
 
-| Flag | Description |
-| --- | --- |
-| --values | The path to the values file |
-| --provider | The path to the provider file |
-
-### Package
-To package your Terraform module provide a valid tag and path to your module directory, tags that do not include a remote host will be considered local only e.g. `create-s3-bucket:v1` , run the following command:
 ```bash
-nori package create-s3-bucket:v1 ./modules/s3-bucket
-```
+# 1. Package and push module to registry
+nori package ghcr.io/myorg/s3-bucket:v1.0.0 ./terraform-module
 
-### Tag
-Use tag to rename a module in the local registry:
-```bash
-nori tag create-s3-bucket:v1 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v2
-```
+# 2. Configure state repository
+nori config set state_repository ghcr.io/myorg/nori-state
 
-### Push
-To push your packaged module to a container registry, run the following command:
-```bash
-nori push 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1
-```
-| Flag | Description |
-| --- | --- |
-| --insecure | Allow insecure connections to the registry |
+# 3. Create a release
+nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml
 
-### Pull
-To pull your packaged module from a container registry, run the following command:
-```bash
-nori pull 123456789012.dkr.ecr.eu-west-1.amazonaws.com/create-s3-bucket:v1
-```
+# 4. Upgrade with new values
+nori release upgrade my-bucket -f new-values.yaml
 
-| Flag | Description |
-| --- | --- |
-| --create | Exports the pulled image to the local working directory |
-
-## List Packages
-List all local packages
-```bash
-nori list
-```
-
-## Inspect Package
-get details about a package from its manifest
-```bash
-nori inspect create-s3-bucket:v2
-```
-
-## Projects
-Projects are the same as workspaces and make up the logical naming of groups of resoruces. when you run `nori init` the your project will be sent as `default`.
-Setting project:
-```bash
-nori config --set-project storage
-```
-Get current Project
-```bash
-nori config project
-```
-
-## List Releases
-List Releases that have been deployed. 
-```bash
+# 5. List all releases
 nori release list
 ```
 
-## Destorying Resoruces
-Destorys the state for all resources in a release.
+## Configuration
+
+### State Repository
+
+Nori stores release state (metadata, values, Terraform state) as OCI artifacts. Configure your state repository:
+
 ```bash
-nori destroy test-bucket
+# Set state repository
+nori config set state_repository ghcr.io/myorg/nori-releases
+
+# View current configuration
+nori config get state_repository
+
+# List all config settings
+nori config get
 ```
+
+### Configuration File
+
+Configuration is stored in `~/.nori/config.yaml`:
+
+```yaml
+state_repository: ghcr.io/myorg/nori-releases
+registries:
+  registry.local:5000:
+    insecure: true
+```
+
+## Packaging Modules
+
+### Module Archive Requirements
+
+Nori accepts `.zip` or `.tar.gz` archives containing OpenTofu configuration files. The archive should contain the module files at the root level or in a single subdirectory.
+
+**Recommended structure:**
+```
+module.zip
+├── main.tf
+├── variables.tf
+├── outputs.tf
+├── versions.tf
+└── README.md
+```
+
+### Creating Archives
+
+**Using zip:**
+```bash
+cd terraform-module/
+zip -r ../module.zip .
+```
+
+**Using tar.gz:**
+```bash
+cd terraform-module/
+tar -czvf ../module.tar.gz .
+```
+
+### Packaging with Metadata
+
+Extract metadata from OpenTofu configuration:
+```bash
+nori package ghcr.io/org/module:v1.0.0 module.zip \
+  --config ./terraform-module \
+  --description "My awesome Terraform module"
+```
+
+Add custom annotations:
+```bash
+nori package ghcr.io/org/module:v1.0.0 module.zip \
+  --annotation org.opencontainers.image.authors="team@example.com" \
+  --annotation org.opencontainers.image.documentation="https://docs.example.com"
+```
+
+### Package Only (Offline Packaging)
+
+Package a module without pushing to a registry. This is useful for CI/CD pipelines where you want to separate the packaging and pushing steps, or for offline environments.
+
+```bash
+# Package to default file (module-v1.0.0.zip)
+nori package ghcr.io/org/module:v1.0.0 module.zip --package-only
+
+# Package to a custom output file
+nori package ghcr.io/org/module:v1.0.0 module.tar.gz --package-only --output ./dist/module.zip
+
+# Later, push the packaged file
+nori push ghcr.io/org/module:v1.0.0 ./dist/module.zip
+```
+
+The `--package-only` flag:
+- Validates and processes the archive (converts tar.gz to zip if needed)
+- Builds OCI annotations from metadata
+- Writes the processed artifact to a local file
+- Outputs instructions for pushing later with `nori push`
+
+## Registry Authentication
+
+### Using Docker Credentials
+
+Nori uses your existing Docker credentials. Log in using Docker CLI:
+```bash
+docker login ghcr.io
+docker login registry.example.com
+```
+
+Or use Nori's login command:
+```bash
+nori login ghcr.io
+nori login registry.example.com
+```
+
+### Supported Registries
+
+| Registry | Login Example |
+|----------|---------------|
+| GitHub Container Registry | `nori login ghcr.io` |
+| Docker Hub | `nori login docker.io` |
+| AWS ECR | `aws ecr get-login-password \| nori login --password-stdin <account>.dkr.ecr.<region>.amazonaws.com` |
+| Google Artifact Registry | `gcloud auth print-access-token \| nori login --password-stdin <region>-docker.pkg.dev` |
+| Azure Container Registry | `az acr login --name myregistry` |
+| Gitea | `nori login gitea.example.com` |
+
+### Environment Variables
+
+For CI/CD pipelines, use environment variables:
+
+```bash
+# GitHub Actions
+export GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+
+# Generic credentials
+export NORI_REGISTRY_USERNAME=myuser
+export NORI_REGISTRY_PASSWORD=mytoken
+```
+
+### Credential Helpers
+
+Nori supports Docker credential helpers:
+
+- **macOS:** `osxkeychain`
+- **Windows:** `wincred`
+- **Linux:** `pass`, `secretservice`
+
+Configure in `~/.docker/config.json`:
+```json
+{
+  "credsStore": "osxkeychain",
+  "credHelpers": {
+    "gcr.io": "gcloud",
+    "public.ecr.aws": "ecr-login"
+  }
+}
+```
+
+## Release Management
+
+Nori provides release management for OpenTofu modules. Release state is stored as OCI artifacts for versioning and portability.
+
+### Values Files
+
+Create a `values.yaml` file with variable values:
+
+```yaml
+# values.yaml
+bucket_name: my-application-bucket
+region: us-east-1
+versioning_enabled: true
+
+tags:
+  Environment: production
+  Team: platform
+  CostCenter: "12345"
+
+lifecycle_rules:
+  - id: archive
+    enabled: true
+    transition:
+      days: 90
+      storage_class: GLACIER
+```
+
+### Creating Releases
+
+Create a new release from a module:
+
+```bash
+# Basic create
+nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml
+
+
+# With inline values
+nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 \
+  --set bucket_name=my-bucket \
+  --set versioning_enabled=true
+
+# With annotations
+nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml \
+  --annotation team=platform \
+  --annotation environment=production
+
+# Plan only (preview changes)
+nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml --plan-only
+```
+
+### Upgrading Releases
+
+Upgrade an existing release with new values or module version:
+
+```bash
+# Upgrade with new values (same module version)
+nori release upgrade my-bucket -f values.yaml
+
+# Upgrade to a new module version using -t flag
+nori release upgrade my-bucket -t v2.0.0 -f values.yaml
+
+# Upgrade to a new module version (full reference)
+nori release upgrade my-bucket ghcr.io/myorg/s3-bucket:v2.0.0
+
+# Upgrade with inline values
+nori release upgrade my-bucket --set bucket_name=new-bucket
+
+# Reuse previous values and merge with new ones
+nori release upgrade my-bucket -f values.yaml --reuse-values
+
+# Reset to default values
+nori release upgrade my-bucket -f values.yaml --reset-values
+
+# Add annotations to upgrade
+nori release upgrade my-bucket -f values.yaml --annotation release-notes="Fixed bug"
+```
+
+### Listing Releases
+
+View all releases stored in the state repository:
+
+```bash
+# List all releases
+nori release list
+
+# Output as JSON
+nori release list -o json
+
+# Show all releases including failed
+nori release list -a
+```
+
+### Release History
+
+View version history for a release:
+
+```bash
+# Show history
+nori release history my-bucket
+
+# Limit to last 5 versions
+nori release history my-bucket --limit 5
+
+# Output as JSON
+nori release history my-bucket -o json
+```
+
+### Inspecting Releases
+
+View detailed information about a release:
+
+```bash
+# Inspect latest version
+nori release inspect my-bucket
+
+# Inspect specific version
+nori release inspect my-bucket --version v1.2.0
+
+# Output as JSON
+nori release inspect my-bucket -o json
+```
+
+### destroying Releases
+
+Remove a release and destroy its infrastructure:
+
+```bash
+# destroy with confirmation
+nori release destroy my-bucket
+
+# Auto-approve destruction
+nori release destroy my-bucket --auto-approve
+```
+
+## Working with Registries
+
+### Listing Module Versions
+
+```bash
+nori list ghcr.io/myorg/s3-bucket
+```
+
+Output:
+```
+Tags for ghcr.io/myorg/s3-bucket:
+  v1.0.0
+  v1.1.0
+  v1.2.0
+  latest
+```
+
+### Inspecting Artifacts
+
+View artifact metadata without downloading:
+```bash
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0
+```
+
+JSON output for scripting:
+```bash
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --format json
+```
+
+### Pulling Artifacts
+
+Download artifacts locally:
+```bash
+nori pull ghcr.io/myorg/s3-bucket:v1.0.0
+nori pull ghcr.io/myorg/s3-bucket:v1.0.0 -o my-module.tar.gz
+```
+
+### Pushing Pre-built Artifacts
+
+Push an existing archive:
+```bash
+nori push ghcr.io/myorg/s3-bucket:v1.1.0 module.tar.gz
+```
+
+## Advanced Usage
+
+### OpenTofu Integration
+
+Use Nori-packaged modules directly in OpenTofu 1.10+:
+
+```hcl
+terraform {
+  required_version = ">= 1.10"
+}
+
+module "s3_bucket" {
+  source = "oci://ghcr.io/myorg/s3-bucket?tag=v1.0.0"
+
+  bucket_name        = "my-bucket"
+  versioning_enabled = true
+}
+```
+
+
+### Backend Configuration
+
+Pass backend configuration at deploy time:
+```bash
+nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml \
+  --backend-config bucket=my-tf-state \
+  --backend-config key=s3-bucket/terraform.tfstate \
+  --backend-config region=us-east-1
+```
+
+### Targeting Resources
+
+Apply to specific resources:
+```bash
+nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml \
+  --target aws_s3_bucket.main \
+  --target aws_s3_bucket_versioning.main
+```
+
+### Parallelism
+
+Control resource operation parallelism:
+```bash
+nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml --parallelism 20
+```
+
+### Verbose Logging
+
+Enable debug output:
+```bash
+nori --verbose release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml
+```
+
+### Insecure Registries
+
+Allow HTTP connections (not recommended for production):
+```bash
+nori --insecure package registry.local:5000/module:v1.0.0 module.zip
+```
+
+Or configure in `~/.nori/config.yaml`:
+```yaml
+registries:
+  registry.local:5000:
+    insecure: true
+```
+
+### Legacy Deploy Command
+
+For one-off deployments without release tracking, use the deploy command:
+```bash
+nori deploy ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml
+```
+
+This deploys without storing state in OCI and is useful for testing or ephemeral environments.
