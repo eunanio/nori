@@ -10,7 +10,7 @@ import (
 
 // Version information (set at build time)
 var (
-	version = "1.0.0-dev2"
+	version = "1.0.0"
 	commit  = "unknown"
 	date    = "unknown"
 )
