@@ -1,7 +1,7 @@
 version: 2
 project_name: nori
 builds:
-  - main: ./cmd/nori
+  - main: ./cmd/main.go
     binary: nori
     ldflags:
       - -s -w
@@ -36,5 +36,5 @@ changelog:
 release:
   github:
     owner: eunanio
-    name: nori-v2
+    name: nori
 
