@@ -1,7 +1,7 @@
 version: 2
 project_name: nori
 builds:
-  - main: ./cmd/nori
+  - main: ./cmd
     binary: nori
     env:
       - CGO_ENABLED=0
