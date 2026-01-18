@@ -262,6 +262,53 @@ func TestGetDefaultCredentialHelper(t *testing.T) {
 	assert.NotPanics(t, func() { _ = helper })
 }
 
+func TestGetCredentialHelper_FallbackToDockerConfig(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+
+	// Create config with credsStore
+	configContent := `{"credsStore": "wincred"}`
+	err := os.WriteFile(configPath, []byte(configContent), 0600)
+	require.NoError(t, err)
+
+	// Set DOCKER_CONFIG to use our test config
+	t.Setenv("DOCKER_CONFIG", tempDir)
+
+	helper := GetCredentialHelper()
+
+	// On platforms without a default helper, should fall back to credsStore
+	// On platforms with a default (Windows, macOS), should return that instead
+	assert.NotEmpty(t, helper, "should return a credential helper")
+}
+
+func TestGetCredentialHelper_NoConfig(t *testing.T) {
+	// Point to non-existent config
+	t.Setenv("DOCKER_CONFIG", "/nonexistent/path")
+
+	// Should return platform default or empty - just verify it doesn't panic
+	helper := GetCredentialHelper()
+	_ = helper
+}
+
+func TestGetCredentialHelper_EmptyCredsStore(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+
+	// Create config without credsStore
+	configContent := `{"auths": {}}`
+	err := os.WriteFile(configPath, []byte(configContent), 0600)
+	require.NoError(t, err)
+
+	t.Setenv("DOCKER_CONFIG", tempDir)
+
+	helper := GetCredentialHelper()
+
+	// On platforms with a default helper (Windows, macOS), should return that
+	// On Linux without pass/secretservice, should return empty
+	// Just verify it doesn't panic
+	_ = helper
+}
+
 func TestLoadDockerConfig_NonExistent(t *testing.T) {
 	cs := NewCredentialStore("/nonexistent/path/config.json", nil)
 
