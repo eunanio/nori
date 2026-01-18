@@ -1,20 +1,19 @@
 # Nori GitHub Action Dockerfile
 # Downloads pre-built nori binary from GitHub releases
 
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
 # Install runtime dependencies
 # - ca-certificates: for HTTPS connections to registries
 # - zip: for creating archives from directories
 # - jq: for parsing JSON annotations and GitHub API responses
-# - bash: for entrypoint script
 # - curl: for downloading nori binary
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     zip \
     jq \
-    bash \
-    curl
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Download pre-built nori binary from GitHub releases
 # Using GitHub API to get the latest release asset URL
@@ -27,8 +26,11 @@ RUN set -ex && \
         DOWNLOAD_URL="https://github.com/eunanio/nori/releases/download/${NORI_VERSION}/nori_${NORI_VERSION#v}_linux_amd64.tar.gz"; \
     fi && \
     echo "Downloading nori from: ${DOWNLOAD_URL}" && \
-    curl -fsSL "${DOWNLOAD_URL}" | tar -xz -C /usr/local/bin && \
-    chmod +x /usr/local/bin/nori
+    mkdir -p /tmp/nori-download && \
+    curl -fsSL "${DOWNLOAD_URL}" | tar -xz -C /tmp/nori-download && \
+    find /tmp/nori-download -name "nori" -type f -exec mv {} /usr/local/bin/nori \; && \
+    chmod +x /usr/local/bin/nori && \
+    rm -rf /tmp/nori-download
 
 # Verify nori is executable
 RUN nori version
