@@ -51,6 +51,15 @@ echo "Tag: ${TAG}"
 echo "Module Path: ${MODULE_PATH}"
 echo "Description: ${DESCRIPTION:-<not set>}"
 echo "Insecure: ${INSECURE}"
+
+# Log authentication method (without exposing secrets)
+if [[ -n "${NORI_REGISTRY_USERNAME:-}" && -n "${NORI_REGISTRY_PASSWORD:-}" ]]; then
+    echo "Authentication: using explicit username/token inputs"
+elif [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    echo "Authentication: using GITHUB_TOKEN"
+else
+    echo "Authentication: no credentials detected (anonymous)"
+fi
 echo "::endgroup::"
 
 # =============================================================================
