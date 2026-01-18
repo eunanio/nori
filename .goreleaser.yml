@@ -1,8 +1,10 @@
 version: 2
 project_name: nori
 builds:
-  - main: ./cmd/main.go
+  - main: ./cmd/nori
     binary: nori
+    env:
+      - CGO_ENABLED=0
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
