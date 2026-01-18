@@ -31,6 +31,14 @@ inputs:
     description: 'Allow insecure (HTTP) registry connections'
     required: false
     default: 'false'
+  username:
+    description: 'Registry username (auto-detected for GHCR using github.actor)'
+    required: false
+    default: ''
+  token:
+    description: 'Registry token/password for authentication (auto-detected for GHCR)'
+    required: false
+    default: ''
 
 outputs:
   reference:
@@ -41,6 +49,10 @@ outputs:
 runs:
   using: 'docker'
   image: 'Dockerfile'
+  env:
+    GITHUB_TOKEN: ${{ github.token }}
+    NORI_REGISTRY_USERNAME: ${{ inputs.username }}
+    NORI_REGISTRY_PASSWORD: ${{ inputs.token }}
   args:
     - ${{ inputs.registry }}
     - ${{ inputs.repository }}

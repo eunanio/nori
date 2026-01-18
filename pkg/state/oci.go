@@ -146,7 +146,7 @@ func (s *StateStore) PushState(ctx context.Context, ref string, state *ReleaseSt
 	annotations := map[string]string{
 		oci.AnnotationCreated:     time.Now().UTC().Format(time.RFC3339),
 		oci.AnnotationVersion:     state.Metadata.Version,
-		oci.AnnotationNoriVersion: "2.0.0",
+		oci.AnnotationNoriVersion: "1.0.0",
 		"io.nori.release.name":    state.Metadata.Name,
 		"io.nori.release.status":  string(state.Metadata.Status),
 		"io.nori.module.ref":      state.Metadata.ModuleRef,

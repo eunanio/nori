@@ -466,3 +466,26 @@ func GetDefaultCredentialHelper() string {
 		return ""
 	}
 }
+
+// GetCredentialHelper returns the credential helper to use for OCI registries.
+// It first checks the Docker config's credsStore setting (which reflects the user's
+// actual Docker configuration), then falls back to platform-specific defaults.
+// This handles cases like:
+// - Docker Desktop on Windows using "desktop" instead of "wincred"
+// - WSL using "wincred" from the Docker config
+// - Custom credential helpers configured by the user
+func GetCredentialHelper() string {
+	// First check Docker config's credsStore (most accurate reflection of user's setup)
+	configPath := DefaultDockerConfigPath()
+	if configPath != "" {
+		if data, err := os.ReadFile(configPath); err == nil {
+			var config DockerConfig
+			if err := json.Unmarshal(data, &config); err == nil && config.CredsStore != "" {
+				return config.CredsStore
+			}
+		}
+	}
+
+	// Fall back to platform defaults
+	return GetDefaultCredentialHelper()
+}

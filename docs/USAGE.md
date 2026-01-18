@@ -206,6 +206,41 @@ Configure in `~/.docker/config.json`:
 }
 ```
 
+### OpenTofu Authentication
+
+When Nori runs OpenTofu commands (`tofu init`, `tofu plan`, `tofu apply`, `tofu destroy`), it automatically configures OpenTofu to use the appropriate Docker credential helper for OCI registry authentication.
+
+**How it works:**
+
+1. Nori detects the credential helper based on your platform:
+   - **macOS:** Uses `osxkeychain`
+   - **Windows:** Uses `wincred`
+   - **Linux:** Uses `pass` or `secretservice` if available
+
+2. If no platform default is available (common on Linux/WSL), Nori reads the `credsStore` setting from your Docker config (`~/.docker/config.json`)
+
+3. Nori generates a temporary OpenTofu CLI configuration file with the credential helper and sets `TF_CLI_CONFIG_FILE` before running OpenTofu commands
+
+**WSL (Windows Subsystem for Linux):**
+
+In WSL environments, Docker Desktop typically configures `~/.docker/config.json` with:
+```json
+{
+  "credsStore": "wincred"
+}
+```
+
+Nori automatically detects this and configures OpenTofu to use `wincred` for authentication, allowing seamless access to private registries like `ghcr.io`.
+
+**Troubleshooting:**
+
+If you encounter authentication errors with OpenTofu:
+
+1. Verify you're logged in: `docker login ghcr.io` or `nori login ghcr.io`
+2. Check your Docker config has credentials: `cat ~/.docker/config.json`
+3. Ensure the credential helper is accessible: `docker-credential-wincred list` (or appropriate helper)
+4. Use verbose mode to see what credential helper Nori detects: `nori --verbose release create ...`
+
 ## Release Management
 
 Nori provides release management for OpenTofu modules. Release state is stored as OCI artifacts for versioning and portability.
