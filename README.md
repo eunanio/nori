@@ -41,10 +41,10 @@ Download pre-built binaries from the [Releases](https://github.com/eunanio/nori/
 
 ```bash
 # Package a zip file
-nori package ghcr.io/myorg/s3-bucket:v1.0.0 ./module.zip
+nori package ghcr.io/myorg/s3:v1.0.0 ./module.zip
 
 # Package with description
-nori package ghcr.io/myorg/s3-bucket:v1.0.0 ./module.tar.gz \
+nori package ghcr.io/myorg/s3:v1.0.0 ./module.tar.gz \
   --description "Creates an S3 bucket with versioning enabled"
 ```
 
@@ -54,7 +54,7 @@ Nori-packaged modules are compatible with OpenTofu 1.10+ native OCI module suppo
 
 ```hcl
 module "s3_bucket" {
-  source = "oci://ghcr.io/myorg/s3-bucket?tag=v1.0.0"
+  source = "oci://ghcr.io/eunanio/oci-terraform-modules/s3?tag=v1.0.0"
 
   bucket_name        = "my-bucket"
   versioning_enabled = true
@@ -74,7 +74,7 @@ tags:
 
 ```bash
 # Deploy the module
-nori deploy ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml
+nori deploy ghcr.io/eunanio/oci-terraform-modules/s3:v1.0.0 -f values.yaml
 ```
 
 ## Command Reference
