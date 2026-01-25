@@ -82,9 +82,10 @@ type PackageResult struct {
 
 // PrepareResult contains the result of preparing a package (without pushing).
 type PrepareResult struct {
-	Content     []byte
-	Annotations map[string]string
-	Size        int64
+	Content       []byte
+	Annotations   map[string]string
+	Size          int64
+	ReadmeContent []byte
 }
 
 // NewPackager creates a new Packager.
@@ -139,10 +140,22 @@ func (p *Packager) PreparePackage(ctx context.Context, archivePath string, opts 
 		}
 	}
 
+	// Extract README from archive
+	var readmeContent []byte
+	readmeContent, err = p.extractReadme(archivePath, content, archiveType)
+	if err != nil {
+		p.logger.Warn("failed to extract README", "error", err)
+	}
+	if readmeContent != nil {
+		p.logger.Debug("README.md detected in archive", "size", len(readmeContent))
+		annotations[oci.AnnotationReadme] = "true"
+	}
+
 	return &PrepareResult{
-		Content:     content,
-		Annotations: annotations,
-		Size:        int64(len(content)),
+		Content:       content,
+		Annotations:   annotations,
+		Size:          int64(len(content)),
+		ReadmeContent: readmeContent,
 	}, nil
 }
 
@@ -163,8 +176,8 @@ func (p *Packager) Package(ctx context.Context, reference, archivePath string, o
 		return nil, err
 	}
 
-	// Push artifact
-	artifact, err := p.client.PushArtifact(ctx, ref, prepared.Content, prepared.Annotations)
+	// Push artifact with optional README layer
+	artifact, err := p.client.PushArtifactWithReadme(ctx, ref, prepared.Content, prepared.ReadmeContent, prepared.Annotations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to push artifact: %w", err)
 	}
@@ -340,4 +353,18 @@ func extractStringValue(line string) string {
 	value := strings.TrimSpace(parts[1])
 	value = strings.Trim(value, "\"'")
 	return value
+}
+
+// extractReadme extracts README.md content from an archive.
+func (p *Packager) extractReadme(archivePath string, content []byte, archiveType util.ArchiveType) ([]byte, error) {
+	switch archiveType {
+	case util.ArchiveTypeZip:
+		// For zip files, extract from the content (which may have been converted)
+		return util.ExtractReadmeFromZip(content)
+	case util.ArchiveTypeTarGz:
+		// For tar.gz, extract from the original file before conversion
+		return util.ExtractReadmeFromTarGz(archivePath)
+	default:
+		return nil, nil
+	}
 }

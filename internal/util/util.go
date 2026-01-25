@@ -301,6 +301,100 @@ func ConvertTarGzToZip(tarGzPath string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// ExtractReadmeFromZip extracts README.md content from zip archive bytes.
+// It looks for README.md at the root level or in a single top-level directory.
+// Returns nil if no README is found.
+func ExtractReadmeFromZip(content []byte) ([]byte, error) {
+	reader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read zip: %w", err)
+	}
+
+	// Look for README.md at root or in single top-level directory
+	var readmeFile *zip.File
+	for _, file := range reader.File {
+		// Normalize to forward slashes for consistent handling
+		name := filepath.ToSlash(file.Name)
+		baseName := strings.ToLower(filepath.Base(name))
+
+		// Check if it's a README.md file
+		if baseName != "readme.md" {
+			continue
+		}
+
+		// Check if it's at root level or one level deep
+		// Count the number of path separators to determine depth
+		dir := filepath.ToSlash(filepath.Dir(name))
+		depth := strings.Count(dir, "/")
+		if dir == "." || (depth == 0 && dir != "") {
+			// Root level (dir == ".") or one level deep (e.g., "module" with no slashes)
+			readmeFile = file
+			break
+		}
+	}
+
+	if readmeFile == nil {
+		return nil, nil // No README found, not an error
+	}
+
+	rc, err := readmeFile.Open()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open README: %w", err)
+	}
+	defer rc.Close()
+
+	return io.ReadAll(rc)
+}
+
+// ExtractReadmeFromTarGz extracts README.md content from a tar.gz file.
+// It looks for README.md at the root level or in a single top-level directory.
+// Returns nil if no README is found.
+func ExtractReadmeFromTarGz(archivePath string) ([]byte, error) {
+	file, err := os.Open(archivePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open archive: %w", err)
+	}
+	defer file.Close()
+
+	gzReader, err := gzip.NewReader(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer gzReader.Close()
+
+	tarReader := tar.NewReader(gzReader)
+
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tar entry: %w", err)
+		}
+
+		// Normalize to forward slashes for consistent handling
+		name := filepath.ToSlash(header.Name)
+		baseName := strings.ToLower(filepath.Base(name))
+
+		// Check if it's a README.md file
+		if baseName != "readme.md" {
+			continue
+		}
+
+		// Check if it's at root level or one level deep
+		// Count the number of path separators to determine depth
+		dir := filepath.ToSlash(filepath.Dir(name))
+		depth := strings.Count(dir, "/")
+		if dir == "." || (depth == 0 && dir != "") {
+			// Root level (dir == ".") or one level deep (e.g., "module" with no slashes)
+			return io.ReadAll(tarReader)
+		}
+	}
+
+	return nil, nil // No README found, not an error
+}
+
 // NormalizeModuleDir normalizes a module directory structure after extraction.
 // If the extracted content has a single subdirectory containing .tf files (with no .tf files at root),
 // it moves the contents up to the parent directory.

@@ -118,6 +118,11 @@ func runPackage(cmd *cobra.Command, args []string, opts *packageOptions) error {
 	fmt.Printf("  Digest:    %s\n", result.Digest)
 	fmt.Printf("  Size:      %d bytes\n", result.Size)
 
+	// Show README status
+	if result.Annotations[oci.AnnotationReadme] == "true" {
+		fmt.Printf("  README:    Included\n")
+	}
+
 	if len(result.Annotations) > 0 {
 		fmt.Printf("  Annotations:\n")
 		for k, v := range result.Annotations {
@@ -157,6 +162,12 @@ func runPackageOnly(ctx context.Context, packager *packaging.Packager, reference
 	fmt.Printf("✓ Module packaged successfully\n")
 	fmt.Printf("  Output:    %s\n", outputPath)
 	fmt.Printf("  Size:      %d bytes\n", result.Size)
+
+	// Show README status
+	if result.ReadmeContent != nil {
+		fmt.Printf("  README:    Detected (%d bytes)\n", len(result.ReadmeContent))
+	}
+
 	fmt.Printf("\nTo push this package to a registry, run:\n")
 	fmt.Printf("  nori push %s %s\n", reference, outputPath)
 

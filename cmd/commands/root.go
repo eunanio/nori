@@ -33,14 +33,9 @@ var (
 func NewRootCommand(version, commit, date string) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "nori",
-		Short: "OCI-based Terraform/OpenTofu module management",
-		Long: `Nori is a tool for packaging and deploying Terraform/OpenTofu modules as OCI artifacts.
-
-It provides a workflow for managing infrastructure modules:
-  - Package modules as OCI artifacts
-  - Push and pull from any OCI-compliant registry
-  - Deploy modules with values files
-  - Full OpenTofu 1.10+ compatibility`,
+		Short: "OCI-based Terraform module management",
+		Long: `Nori is a tool for packaging and deploying Terraform/OpenTofu modules as OCI artifacts. For distribution on any OCI-compliant registry.
+`,
 		Version: formatVersion(version, commit, date),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return setup(cmd, args)

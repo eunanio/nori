@@ -76,16 +76,20 @@ The `GenerateMainTF` function produces Terraform configuration from a `Module
 
 ### Packaging (`pkg/packaging`)
 
-The `Packager` converts module archives into OCI artifacts. Input archives may be `.zip` or `.tar.gz` format; zip archives are converted to tar.gz for ORAS compatibility. The packager validates archive contents and extracts Terraform metadata during processing.
+The `Packager` converts module archives into OCI artifacts. Input archives may be `.zip` or `.tar.gz` format; tar.gz archives are converted to zip for OpenTofu compatibility. The packager validates archive contents and extracts Terraform metadata during processing.
+
+The packager automatically detects `README.md` files at the root of the module archive. When present, the README is stored as a separate layer and the `io.nori.readme` annotation is added to the manifest.
 
 Module artifacts are structured as follows:
 
 ```
-OCI Manifest
+OCI Manifest (with io.nori.readme annotation if README present)
 ├── Config Layer (application/vnd.oci.image.config.v1+json)
 │   └── Module metadata (created, version, type)
-└── Module Layer (application/vnd.oci.image.layer.v1.tar+gzip)
-    └── Compressed module content
+├── Module Layer (archive/zip)
+│   └── Compressed module content
+└── README Layer (text/markdown) [optional]
+    └── README.md content
 ```
 
 ### Deployment (`pkg/deploy`)
@@ -132,7 +136,7 @@ nori
 ├── push           Upload artifact to registry
 ├── deploy         Deploy module without release tracking
 ├── list           List artifact versions
-├── inspect        Display artifact metadata
+├── inspect        Display artifact metadata (--readme to view README)
 ├── login          Authenticate with registry
 ├── logout         Remove stored credentials
 └── version        Display version information
@@ -207,13 +211,19 @@ User Archive (.zip/.tar.gz)
     ↓
 Validate Archive
     ↓
-Convert to tar.gz (if required)
+Convert to zip (if tar.gz)
+    ↓
+Extract README.md (if present)
     ↓
 Create OCI Manifest
     ↓
 Attach Config Layer
     ↓
 Attach Module Layer
+    ↓
+Attach README Layer (if README found)
+    ↓
+Set io.nori.readme annotation (if README found)
     ↓
 Push to Registry
 ```

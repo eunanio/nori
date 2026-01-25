@@ -11,6 +11,7 @@ import (
 
 type inspectOptions struct {
 	format string
+	readme bool
 }
 
 func newInspectCommand() *cobra.Command {
@@ -32,7 +33,10 @@ Examples:
   nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --format json
 
   # Inspect by digest
-  nori inspect ghcr.io/myorg/s3-bucket@sha256:abc123...`,
+  nori inspect ghcr.io/myorg/s3-bucket@sha256:abc123...
+
+  # View the module's README
+  nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --readme`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runInspect(cmd, args, opts)
@@ -40,6 +44,7 @@ Examples:
 	}
 
 	cmd.Flags().StringVar(&opts.format, "format", "text", "Output format (text, json)")
+	cmd.Flags().BoolVar(&opts.readme, "readme", false, "Display the module's README content")
 
 	return cmd
 }
@@ -57,8 +62,14 @@ func runInspect(cmd *cobra.Command, args []string, opts *inspectOptions) error {
 		return fmt.Errorf("invalid reference: %w", err)
 	}
 
-	// Inspect artifact
 	client := getClient()
+
+	// Handle --readme flag
+	if opts.readme {
+		return runInspectReadme(cmd, ref, client, opts)
+	}
+
+	// Inspect artifact
 	artifact, err := client.InspectArtifact(ctx, ref)
 	if err != nil {
 		return fmt.Errorf("failed to inspect artifact: %w", err)
@@ -70,6 +81,52 @@ func runInspect(cmd *cobra.Command, args []string, opts *inspectOptions) error {
 	default:
 		return printInspectText(reference, artifact)
 	}
+}
+
+func runInspectReadme(cmd *cobra.Command, ref name.Reference, client *oci.Client, opts *inspectOptions) error {
+	ctx := cmd.Context()
+
+	// First check if the artifact has a README annotation
+	artifact, err := client.InspectArtifact(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("failed to inspect artifact: %w", err)
+	}
+
+	// Check for README annotation
+	if artifact.Annotations[oci.AnnotationReadme] != "true" {
+		return fmt.Errorf("this package does not contain a README")
+	}
+
+	// Pull the README content
+	readmeContent, err := client.PullReadme(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("failed to pull README: %w", err)
+	}
+
+	if readmeContent == nil {
+		return fmt.Errorf("README layer not found in artifact")
+	}
+
+	// Output based on format
+	switch opts.format {
+	case "json":
+		output := struct {
+			Reference string `json:"reference"`
+			Readme    string `json:"readme"`
+		}{
+			Reference: ref.String(),
+			Readme:    string(readmeContent),
+		}
+		data, err := json.MarshalIndent(output, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal output: %w", err)
+		}
+		fmt.Println(string(data))
+	default:
+		fmt.Print(string(readmeContent))
+	}
+
+	return nil
 }
 
 func printInspectText(reference string, artifact *oci.Artifact) error {
@@ -108,16 +165,21 @@ func printInspectText(reference string, artifact *oci.Artifact) error {
 		}
 	}
 
+	// Show README availability
+	if artifact.Annotations[oci.AnnotationReadme] == "true" {
+		fmt.Printf("\nREADME: Available (use --readme to view)\n")
+	}
+
 	return nil
 }
 
 func printInspectJSON(artifact *oci.Artifact) error {
 	output := struct {
-		Reference   string              `json:"reference"`
-		Digest      string              `json:"digest"`
-		Annotations map[string]string   `json:"annotations,omitempty"`
-		Layers      []oci.LayerInfo     `json:"layers"`
-		Config      json.RawMessage     `json:"config,omitempty"`
+		Reference   string            `json:"reference"`
+		Digest      string            `json:"digest"`
+		Annotations map[string]string `json:"annotations,omitempty"`
+		Layers      []oci.LayerInfo   `json:"layers"`
+		Config      json.RawMessage   `json:"config,omitempty"`
 	}{
 		Reference:   artifact.Reference.String(),
 		Digest:      artifact.Digest,
@@ -137,4 +199,3 @@ func printInspectJSON(artifact *oci.Artifact) error {
 	fmt.Println(string(data))
 	return nil
 }
-

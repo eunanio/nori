@@ -2,6 +2,7 @@ package packaging
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"os"
@@ -148,6 +149,97 @@ func TestPreparePackage_AnnotationsHaveCreatedTime(t *testing.T) {
 
 	if _, ok := result.Annotations[oci.AnnotationCreated]; !ok {
 		t.Error("expected created annotation to be set")
+	}
+}
+
+func TestPreparePackage_ReadmeDetection(t *testing.T) {
+	tests := []struct {
+		name           string
+		archivePath    string
+		wantReadme     bool
+		wantAnnotation bool
+	}{
+		{
+			name:           "archive with README",
+			archivePath:    "../../testdata/s3-module.zip",
+			wantReadme:     true,
+			wantAnnotation: true,
+		},
+		{
+			name:           "archive without README",
+			archivePath:    "../../testdata/random-resources.zip",
+			wantReadme:     false,
+			wantAnnotation: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Skip if test file doesn't exist
+			if _, err := os.Stat(tt.archivePath); os.IsNotExist(err) {
+				t.Skipf("test archive not found: %s", tt.archivePath)
+			}
+
+			packager := NewPackager(nil, nil)
+			result, err := packager.PreparePackage(context.Background(), tt.archivePath, PackageOptions{})
+			if err != nil {
+				t.Fatalf("PreparePackage() error = %v", err)
+			}
+
+			hasReadme := result.ReadmeContent != nil && len(result.ReadmeContent) > 0
+			if hasReadme != tt.wantReadme {
+				t.Errorf("ReadmeContent present = %v, want %v", hasReadme, tt.wantReadme)
+			}
+
+			hasAnnotation := result.Annotations[oci.AnnotationReadme] == "true"
+			if hasAnnotation != tt.wantAnnotation {
+				t.Errorf("README annotation = %v, want %v", hasAnnotation, tt.wantAnnotation)
+			}
+		})
+	}
+}
+
+func TestPreparePackage_ReadmeContent(t *testing.T) {
+	// Create a test zip with README
+	tempDir := t.TempDir()
+	zipPath := filepath.Join(tempDir, "test-readme.zip")
+
+	zipFile, err := os.Create(zipPath)
+	if err != nil {
+		t.Fatalf("failed to create zip file: %v", err)
+	}
+
+	zw := zip.NewWriter(zipFile)
+
+	// Add main.tf
+	w, _ := zw.Create("main.tf")
+	w.Write([]byte("resource \"null_resource\" \"test\" {}"))
+
+	// Add README.md
+	readmeContent := "# Test Module\n\nThis is a test README."
+	w, _ = zw.Create("README.md")
+	w.Write([]byte(readmeContent))
+
+	zw.Close()
+	zipFile.Close()
+
+	// Test
+	packager := NewPackager(nil, nil)
+	result, err := packager.PreparePackage(context.Background(), zipPath, PackageOptions{})
+	if err != nil {
+		t.Fatalf("PreparePackage() error = %v", err)
+	}
+
+	if result.ReadmeContent == nil {
+		t.Fatal("expected README content to be extracted")
+	}
+
+	if string(result.ReadmeContent) != readmeContent {
+		t.Errorf("README content = %q, want %q", string(result.ReadmeContent), readmeContent)
+	}
+
+	if result.Annotations[oci.AnnotationReadme] != "true" {
+		t.Error("expected io.nori.readme annotation to be set to 'true'")
 	}
 }
 

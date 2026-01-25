@@ -147,6 +147,16 @@ The `--package-only` flag:
 - Writes the processed artifact to a local file
 - Outputs instructions for pushing later with `nori push`
 
+### README Auto-Detection
+
+Nori automatically detects `README.md` files at the root of your module archive. When a README is found:
+
+- The README content is stored as a separate layer in the OCI artifact
+- The `io.nori.readme` annotation is added to the manifest
+- Users can view the README using `nori inspect --readme`
+
+This allows module consumers to view documentation without downloading the entire module.
+
 ## Registry Authentication
 
 ### Using Docker Credentials
@@ -402,6 +412,11 @@ nori inspect ghcr.io/myorg/s3-bucket:v1.0.0
 JSON output for scripting:
 ```bash
 nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --format json
+```
+
+View the module's README (if available):
+```bash
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --readme
 ```
 
 ### Pulling Artifacts
