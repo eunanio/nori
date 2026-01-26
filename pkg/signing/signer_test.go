@@ -20,7 +20,6 @@ func TestNewSigner(t *testing.T) {
 		signer := NewSigner()
 		assert.NotNil(t, signer)
 		assert.NotNil(t, signer.logger)
-		assert.False(t, signer.keyless)
 		assert.Empty(t, signer.keyPath)
 	})
 
@@ -31,7 +30,6 @@ func TestNewSigner(t *testing.T) {
 		signer := NewSigner(
 			WithKeyPath("/path/to/key"),
 			WithPassword(password),
-			WithKeyless(true),
 			WithSignerInsecure(true),
 			WithSignerLogger(logger),
 		)
@@ -39,7 +37,6 @@ func TestNewSigner(t *testing.T) {
 		assert.NotNil(t, signer)
 		assert.Equal(t, "/path/to/key", signer.keyPath)
 		assert.Equal(t, password, signer.password)
-		assert.True(t, signer.keyless)
 		assert.True(t, signer.insecure)
 		assert.Equal(t, logger, signer.logger)
 	})
@@ -248,13 +245,11 @@ func TestVerifyResult(t *testing.T) {
 	t.Run("verify result structure", func(t *testing.T) {
 		result := VerifyResult{
 			Verified: true,
-			SignerID: "test@example.com",
-			Issuer:   "https://token.actions.githubusercontent.com",
+			SignerID: "key:/path/to/nori.pub",
 		}
 
 		assert.True(t, result.Verified)
-		assert.Equal(t, "test@example.com", result.SignerID)
-		assert.Equal(t, "https://token.actions.githubusercontent.com", result.Issuer)
+		assert.Equal(t, "key:/path/to/nori.pub", result.SignerID)
 	})
 }
 

@@ -24,7 +24,6 @@ type packageOptions struct {
 	// Signing options
 	sign    bool
 	keyPath string
-	keyless bool
 }
 
 func newPackageCommand() *cobra.Command {
@@ -61,11 +60,11 @@ Examples:
   # Package to a specific output file
   nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.tar.gz --package-only --output ./dist/module.zip
 
-  # Package and sign with a key file
-  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --key nori.key
+  # Package and sign (uses key from config if configured)
+  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign
 
-  # Package and sign using keyless/OIDC (for CI/CD environments)
-  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --keyless`,
+  # Package and sign with explicit key file
+  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --key nori.key`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPackage(cmd, args, opts)
@@ -79,9 +78,8 @@ Examples:
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "Output file path (used with --package-only)")
 
 	// Signing flags
-	cmd.Flags().BoolVar(&opts.sign, "sign", false, "Sign the artifact after pushing")
-	cmd.Flags().StringVar(&opts.keyPath, "key", "", "Path to private key file for signing")
-	cmd.Flags().BoolVar(&opts.keyless, "keyless", false, "Use keyless/OIDC signing (for CI/CD environments)")
+	cmd.Flags().BoolVar(&opts.sign, "sign", false, "Sign the artifact after pushing (uses key from config if not specified)")
+	cmd.Flags().StringVar(&opts.keyPath, "key", "", "Path to private key file for signing (overrides config)")
 
 	return cmd
 }
@@ -104,8 +102,14 @@ func runPackage(cmd *cobra.Command, args []string, opts *packageOptions) error {
 		return fmt.Errorf("--sign cannot be used with --package-only")
 	}
 
-	if opts.sign && !opts.keyless && opts.keyPath == "" {
-		return fmt.Errorf("--sign requires either --key <path> or --keyless")
+	// If signing without explicit key, try to use key from config
+	if opts.sign && opts.keyPath == "" {
+		cfg := getConfig()
+		if cfg.Signing.KeyPath != "" {
+			opts.keyPath = cfg.Signing.KeyPath
+		} else {
+			return fmt.Errorf("--sign requires --key <path> or signing.key_path in config\n\nTo configure, run:\n  nori config generate-key-pair")
+		}
 	}
 
 	// Parse annotations
@@ -185,27 +189,32 @@ func signArtifact(ctx context.Context, reference string, opts *packageOptions) e
 		return fmt.Errorf("failed to get remote options: %w", err)
 	}
 
-	// Create signer options
-	signerOpts := []signing.SignerOption{
-		signing.WithSignerLogger(log),
-		signing.WithSignerInsecure(insecure),
+	// Get password - try environment variable first, then prompt
+	cfg := getConfig()
+	var password []byte
+
+	if cfg.Signing.PasswordEnv != "" {
+		if envPassword := os.Getenv(cfg.Signing.PasswordEnv); envPassword != "" {
+			password = []byte(envPassword)
+		}
 	}
 
-	if opts.keyless {
-		signerOpts = append(signerOpts, signing.WithKeyless(true))
-	} else {
+	if password == nil {
 		// Prompt for key password
 		fmt.Print("Enter password for signing key: ")
-		password, err := term.ReadPassword(int(os.Stdin.Fd()))
+		password, err = term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
 			return fmt.Errorf("failed to read password: %w", err)
 		}
 		fmt.Println()
+	}
 
-		signerOpts = append(signerOpts,
-			signing.WithKeyPath(opts.keyPath),
-			signing.WithPassword(password),
-		)
+	// Create signer options
+	signerOpts := []signing.SignerOption{
+		signing.WithSignerLogger(log),
+		signing.WithSignerInsecure(insecure),
+		signing.WithKeyPath(opts.keyPath),
+		signing.WithPassword(password),
 	}
 
 	signer := signing.NewSigner(signerOpts...)

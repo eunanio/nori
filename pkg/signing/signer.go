@@ -28,19 +28,12 @@ const (
 
 	// AnnotationSignature is the annotation key for the base64-encoded signature.
 	AnnotationSignature = "dev.cosignproject.cosign/signature"
-
-	// AnnotationCertificate is the annotation key for the signing certificate (keyless).
-	AnnotationCertificate = "dev.sigstore.cosign/certificate"
-
-	// AnnotationBundle is the annotation key for the Rekor bundle (keyless).
-	AnnotationBundle = "dev.sigstore.cosign/bundle"
 )
 
 // Signer handles signing and verification of OCI artifacts.
 type Signer struct {
 	keyPath  string       // Path to private key file
 	password []byte       // Password for private key
-	keyless  bool         // Use keyless/OIDC signing
 	insecure bool         // Allow insecure registry connections
 	logger   *slog.Logger
 }
@@ -59,13 +52,6 @@ func WithKeyPath(path string) SignerOption {
 func WithPassword(password []byte) SignerOption {
 	return func(s *Signer) {
 		s.password = password
-	}
-}
-
-// WithKeyless enables keyless/OIDC signing.
-func WithKeyless(keyless bool) SignerOption {
-	return func(s *Signer) {
-		s.keyless = keyless
 	}
 }
 
@@ -128,8 +114,8 @@ type SignResult struct {
 // VerifyResult contains the result of a verification operation.
 type VerifyResult struct {
 	Verified  bool      // Whether the signature is valid
-	SignerID  string    // Email/subject from certificate (keyless) or key ID
-	Issuer    string    // OIDC issuer (keyless only)
+	SignerID  string    // Key ID or path used for signing
+	Issuer    string    // Reserved for future use
 	Timestamp time.Time // Time of signing
 }
 
@@ -137,12 +123,8 @@ type VerifyResult struct {
 func (s *Signer) Sign(ctx context.Context, ref name.Reference, remoteOpts ...remote.Option) (*SignResult, error) {
 	s.logger.Info("signing artifact", "reference", ref.String())
 
-	if s.keyless {
-		return nil, fmt.Errorf("keyless signing requires Fulcio integration (not yet implemented)")
-	}
-
 	if s.keyPath == "" {
-		return nil, fmt.Errorf("key path is required for key-based signing")
+		return nil, fmt.Errorf("key path is required for signing")
 	}
 
 	// Load private key

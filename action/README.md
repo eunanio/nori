@@ -303,7 +303,9 @@ git push origin vpc-v2.1.0
 | `description` | Module description for OCI annotations | No | `""` |
 | `annotations` | Custom OCI annotations as JSON object | No | `{}` |
 | `insecure` | Allow insecure (HTTP) registry connections | No | `false` |
-| `sign` | Sign the artifact using keyless OIDC signing | No | `false` |
+| `sign` | Sign the artifact using a signing key | No | `false` |
+| `sign-key` | Base64-encoded signing key content (use secrets) | No | `""` |
+| `sign-password` | Password for the signing key (use secrets) | No | `""` |
 
 ## Outputs
 
@@ -315,7 +317,23 @@ git push origin vpc-v2.1.0
 
 ## Artifact Signing
 
-Enable cryptographic signing of artifacts using keyless OIDC. This uses GitHub's OIDC provider to generate short-lived signing certificates, eliminating the need to manage signing keys.
+Enable cryptographic signing of artifacts using a cosign-compatible signing key. Store your signing key and password as GitHub secrets for secure access.
+
+### Setting Up Signing Keys
+
+First, generate a signing key pair using the Nori CLI:
+
+```bash
+# Generate keys
+nori config generate-key-pair --output ./keys
+
+# Base64 encode the private key for storage as a secret
+base64 -i ./keys/nori.key > nori-key-base64.txt
+```
+
+Then add these as GitHub repository secrets:
+- `NORI_SIGN_KEY`: Contents of `nori-key-base64.txt`
+- `NORI_SIGN_PASSWORD`: The password you used when generating the key
 
 ### Basic Signed Workflow
 
@@ -333,7 +351,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write  # Required for keyless signing
     steps:
       - uses: actions/checkout@v4
 
@@ -352,20 +369,20 @@ jobs:
           tag: ${{ github.ref_name }}
           module-path: ./terraform
           sign: 'true'
+          sign-key: ${{ secrets.NORI_SIGN_KEY }}
+          sign-password: ${{ secrets.NORI_SIGN_PASSWORD }}
 ```
-
-**Important:** The `id-token: write` permission is required for keyless OIDC signing.
 
 ### Verifying Signed Artifacts
 
-After publishing a signed artifact, you can verify it using the Nori CLI:
+After publishing a signed artifact, you can verify it using the Nori CLI with the public key:
 
 ```bash
 # Check if artifact is signed
 nori inspect ghcr.io/myorg/my-module:v1.0.0
 
-# Verify signature (requires public key for key-based signatures)
-nori inspect ghcr.io/myorg/my-module:v1.0.0 --verify
+# Verify signature with public key
+nori inspect ghcr.io/myorg/my-module:v1.0.0 --verify --key ./keys/nori.pub
 ```
 
 ## Registry Examples

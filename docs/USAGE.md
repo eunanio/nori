@@ -167,28 +167,49 @@ Nori supports cryptographic signing of OCI artifacts using cosign-compatible key
 Generate a new key pair for signing artifacts:
 
 ```bash
-# Generate keys in current directory (creates nori.key and nori.pub)
+# Generate keys in default location (~/.nori) and auto-configure
 nori config generate-key-pair
 
 # Generate keys in a specific directory
 nori config generate-key-pair --output ~/.nori/keys
 ```
 
-You will be prompted to enter a password to protect the private key.
+You will be prompted to enter a password to protect the private key. After generation, the key path is automatically saved to your config file.
 
 ### Signing Artifacts
 
 Sign an artifact when packaging:
 
 ```bash
-# Package and sign with a key file
-nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --key nori.key
+# Package and sign (uses key from config)
+nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign
 
-# Package and sign using keyless OIDC (for CI/CD environments)
-nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --keyless
+# Package and sign with a specific key file (overrides config)
+nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --key /path/to/nori.key
 ```
 
-When using `--sign --key`, you will be prompted for the private key password.
+When signing, you will be prompted for the private key password unless configured via environment variable.
+
+### Config-Based Signing
+
+Configure signing in `~/.nori/config.yaml`:
+
+```yaml
+signing:
+  key_path: ~/.nori/nori.key
+  password_env: NORI_SIGN_PASSWORD  # Optional: env var containing password
+```
+
+With this configured, simply use `--sign` without specifying the key:
+
+```bash
+# Uses key from config, prompts for password
+nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign
+
+# In CI/CD, set NORI_SIGN_PASSWORD env var to avoid prompt
+export NORI_SIGN_PASSWORD=your-password
+nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign
+```
 
 ### Verifying Signatures
 
@@ -222,7 +243,7 @@ fi
 
 ### Signing in GitHub Actions
 
-Use keyless OIDC signing in GitHub Actions workflows:
+Use key-based signing in GitHub Actions workflows by storing your key and password as secrets:
 
 ```yaml
 name: Publish Module
@@ -238,7 +259,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write  # Required for keyless signing
     steps:
       - uses: actions/checkout@v4
 
@@ -256,10 +276,16 @@ jobs:
           repository: ${{ github.repository_owner }}/my-module
           tag: ${{ github.ref_name }}
           module-path: ./terraform
-          sign: 'true'  # Enable keyless OIDC signing
+          sign: 'true'
+          sign-key: ${{ secrets.NORI_SIGN_KEY }}
+          sign-password: ${{ secrets.NORI_SIGN_PASSWORD }}
 ```
 
-Keyless signing uses GitHub's OIDC provider to generate short-lived certificates, eliminating the need to manage signing keys.
+To set up signing keys for GitHub Actions:
+1. Generate keys locally: `nori config generate-key-pair`
+2. Base64 encode the private key: `base64 -i ~/.nori/nori.key`
+3. Add `NORI_SIGN_KEY` secret with the base64 content
+4. Add `NORI_SIGN_PASSWORD` secret with the key password
 
 ## Registry Authentication
 

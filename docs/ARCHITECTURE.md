@@ -121,8 +121,8 @@ The `signing` package provides cryptographic signing and verification for OCI ar
 
 - **Key Generation**: ECDSA P-256 key pairs with password-protected private keys
 - **Key-based Signing**: Sign artifacts using a private key file
-- **Keyless Signing**: OIDC-based signing for CI/CD environments (using Fulcio)
 - **Signature Verification**: Verify artifact signatures using public keys
+- **Config-based Keys**: Signing key path can be stored in configuration for convenience
 
 Signatures are stored as separate OCI artifacts following the cosign convention. For an artifact with digest `sha256:abc123...`, the signature is stored at the same repository with tag `sha256-abc123....sig`.
 
@@ -296,4 +296,3 @@ Potential enhancements under consideration:
 - Module caching
 - Parallel deployment execution
 - Rollback to previous release versions
-- Keyless signing integration with Rekor transparency log

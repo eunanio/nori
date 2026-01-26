@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -14,12 +15,14 @@ import (
 
 // Supported config properties and their descriptions
 var configProperties = map[string]string{
-	"state_repository":    "OCI repository for storing release state (e.g., ghcr.io/org/nori-state)",
-	"default_registry":    "Default OCI registry when not specified",
-	"deploy.auto_approve": "Automatically approve apply operations (true/false)",
-	"deploy.parallelism":  "Number of parallel operations (integer)",
-	"logging.level":       "Log level (debug, info, warn, error)",
-	"logging.format":      "Log format (text, json)",
+	"state_repository":      "OCI repository for storing release state (e.g., ghcr.io/org/nori-state)",
+	"default_registry":      "Default OCI registry when not specified",
+	"deploy.auto_approve":   "Automatically approve apply operations (true/false)",
+	"deploy.parallelism":    "Number of parallel operations (integer)",
+	"logging.level":         "Log level (debug, info, warn, error)",
+	"logging.format":        "Log format (text, json)",
+	"signing.key_path":      "Path to private signing key",
+	"signing.password_env":  "Environment variable containing signing key password",
 }
 
 func newConfigCommand() *cobra.Command {
@@ -31,12 +34,14 @@ func newConfigCommand() *cobra.Command {
 Configuration is stored in ~/.nori/config.yaml
 
 Available properties:
-  state_repository    OCI repository for storing release state
-  default_registry    Default OCI registry when not specified
-  deploy.auto_approve Auto-approve apply operations (true/false)
-  deploy.parallelism  Number of parallel operations
-  logging.level       Log level (debug, info, warn, error)
-  logging.format      Log format (text, json)
+  state_repository      OCI repository for storing release state
+  default_registry      Default OCI registry when not specified
+  deploy.auto_approve   Auto-approve apply operations (true/false)
+  deploy.parallelism    Number of parallel operations
+  logging.level         Log level (debug, info, warn, error)
+  logging.format        Log format (text, json)
+  signing.key_path      Path to private signing key
+  signing.password_env  Environment variable containing signing key password
 
 Examples:
   # Set state repository
@@ -162,6 +167,10 @@ func runConfigSet(property, value string) error {
 			return fmt.Errorf("invalid log format: %s (must be 'text' or 'json')", value)
 		}
 		cfg.Logging.Format = value
+	case "signing.key_path":
+		cfg.Signing.KeyPath = value
+	case "signing.password_env":
+		cfg.Signing.PasswordEnv = value
 	default:
 		return fmt.Errorf("unknown property: %s\n\nAvailable properties:\n%s", property, listProperties())
 	}
@@ -192,6 +201,10 @@ func runConfigGet(property string) error {
 		value = cfg.Logging.Level
 	case "logging.format":
 		value = cfg.Logging.Format
+	case "signing.key_path":
+		value = cfg.Signing.KeyPath
+	case "signing.password_env":
+		value = cfg.Signing.PasswordEnv
 	default:
 		return fmt.Errorf("unknown property: %s\n\nAvailable properties:\n%s", property, listProperties())
 	}
@@ -225,6 +238,12 @@ func runConfigGetAll() error {
 	printConfigValue("  level", cfg.Logging.Level)
 	printConfigValue("  format", cfg.Logging.Format)
 
+	// Signing settings
+	fmt.Println()
+	fmt.Println("Signing:")
+	printConfigValue("  key_path", cfg.Signing.KeyPath)
+	printConfigValue("  password_env", cfg.Signing.PasswordEnv)
+
 	fmt.Println()
 	fmt.Printf("Config file: %s\n", config.DefaultConfigPath())
 
@@ -254,28 +273,32 @@ func newGenerateKeyPairCommand() *cobra.Command {
 		Short: "Generate a cosign-compatible key pair for signing artifacts",
 		Long: `Generate a new cosign-compatible key pair for signing OCI artifacts.
 
-The keys are stored in the specified directory (default: current directory):
+The keys are stored in the specified directory (default: ~/.nori):
   - nori.key     (private key, password-protected)
   - nori.pub     (public key)
 
-The generated keys are compatible with cosign and can be used with:
-  nori package --sign --key nori.key <reference> <module>
+After generation, the key path is automatically configured in ~/.nori/config.yaml,
+allowing you to use 'nori package --sign' without specifying --key.
 
 Examples:
-  # Generate keys in current directory
+  # Generate keys in default location (~/.nori)
   nori config generate-key-pair
 
   # Generate keys in specific directory
-  nori config generate-key-pair --output ~/.nori/keys
-
-  # Generate keys in nori config directory
-  nori config generate-key-pair --output ~/.nori`,
+  nori config generate-key-pair --output ~/.nori/keys`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGenerateKeyPair(outputDir)
 		},
 	}
 
-	cmd.Flags().StringVarP(&outputDir, "output", "o", ".", "Output directory for key files")
+	// Default to ~/.nori directory
+	home, err := os.UserHomeDir()
+	defaultDir := "."
+	if err == nil {
+		defaultDir = filepath.Join(home, ".nori")
+	}
+
+	cmd.Flags().StringVarP(&outputDir, "output", "o", defaultDir, "Output directory for key files")
 
 	return cmd
 }
@@ -315,9 +338,22 @@ func runGenerateKeyPair(outputDir string) error {
 	fmt.Println("✓ Key pair generated successfully")
 	fmt.Printf("  Private key: %s\n", result.PrivateKeyPath)
 	fmt.Printf("  Public key:  %s\n", result.PublicKeyPath)
+
+	// Auto-configure the key path in config
+	cfg, err := config.Load("")
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+	cfg.Signing.KeyPath = result.PrivateKeyPath
+	if err := config.Save(cfg, ""); err != nil {
+		fmt.Printf("\nWarning: Could not update config: %v\n", err)
+	} else {
+		fmt.Printf("✓ Config updated: signing.key_path = %s\n", result.PrivateKeyPath)
+	}
+
 	fmt.Println()
 	fmt.Println("To sign artifacts:")
-	fmt.Printf("  nori package --sign --key %s <reference> <module>\n", result.PrivateKeyPath)
+	fmt.Println("  nori package --sign <reference> <module>")
 
 	return nil
 }

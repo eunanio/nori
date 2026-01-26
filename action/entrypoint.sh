@@ -117,10 +117,28 @@ if [[ "${INSECURE}" == "true" ]]; then
     NORI_ARGS+=("--insecure")
 fi
 
-# Add signing flags if enabled (uses keyless OIDC in GitHub Actions)
+# Add signing flags if enabled
 if [[ "${SIGN}" == "true" ]]; then
-    NORI_ARGS+=("--sign" "--keyless")
-    echo "Signing enabled (keyless OIDC)"
+    if [[ -z "${NORI_SIGN_KEY:-}" ]]; then
+        echo "::error::Signing requires 'sign-key' input when 'sign' is enabled"
+        exit 1
+    fi
+    if [[ -z "${NORI_SIGN_PASSWORD:-}" ]]; then
+        echo "::error::Signing requires 'sign-password' input when 'sign' is enabled"
+        exit 1
+    fi
+    
+    # Decode and write key to temp file
+    KEY_FILE="/tmp/nori-sign.key"
+    echo "${NORI_SIGN_KEY}" | base64 -d > "${KEY_FILE}"
+    chmod 600 "${KEY_FILE}"
+    
+    NORI_ARGS+=("--sign" "--key" "${KEY_FILE}")
+    
+    # Export password for nori to use
+    export NORI_SIGN_PASSWORD
+    
+    echo "Signing enabled (key-based)"
 fi
 
 # Parse and add annotations from JSON
@@ -178,6 +196,8 @@ echo "✓ Module packaged and pushed successfully!"
 echo "  Reference: ${REFERENCE}"
 echo "  Digest: ${DIGEST}"
 if [[ "${SIGN}" == "true" ]]; then
-    echo "  Signed: Yes (keyless OIDC)"
+    echo "  Signed: Yes"
+    # Clean up key file
+    rm -f /tmp/nori-sign.key
 fi
 
