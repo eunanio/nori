@@ -7,10 +7,11 @@ This guide provides detailed instructions for using Nori to manage OpenTofu modu
 1. [Getting Started](#getting-started)
 2. [Configuration](#configuration)
 3. [Packaging Modules](#packaging-modules)
-4. [Registry Authentication](#registry-authentication)
-5. [Release Management](#release-management)
-6. [Working with Registries](#working-with-registries)
-7. [Advanced Usage](#advanced-usage)
+4. [Artifact Signing](#artifact-signing)
+5. [Registry Authentication](#registry-authentication)
+6. [Release Management](#release-management)
+7. [Working with Registries](#working-with-registries)
+8. [Advanced Usage](#advanced-usage)
 
 ## Getting Started
 
@@ -156,6 +157,109 @@ Nori automatically detects `README.md` files at the root of your module archive.
 - Users can view the README using `nori inspect --readme`
 
 This allows module consumers to view documentation without downloading the entire module.
+
+## Artifact Signing
+
+Nori supports cryptographic signing of OCI artifacts using cosign-compatible keys. This allows you to verify the authenticity and integrity of modules before deployment.
+
+### Generating Signing Keys
+
+Generate a new key pair for signing artifacts:
+
+```bash
+# Generate keys in current directory (creates nori.key and nori.pub)
+nori config generate-key-pair
+
+# Generate keys in a specific directory
+nori config generate-key-pair --output ~/.nori/keys
+```
+
+You will be prompted to enter a password to protect the private key.
+
+### Signing Artifacts
+
+Sign an artifact when packaging:
+
+```bash
+# Package and sign with a key file
+nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --key nori.key
+
+# Package and sign using keyless OIDC (for CI/CD environments)
+nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --keyless
+```
+
+When using `--sign --key`, you will be prompted for the private key password.
+
+### Verifying Signatures
+
+Check if an artifact is signed and verify its signature:
+
+```bash
+# Inspect an artifact (shows signature status)
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0
+
+# Verify signature with a public key
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --key nori.pub
+
+# Simple verification check (returns true/false)
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --verify
+
+# Verify with specific public key
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --verify --key nori.pub
+```
+
+The `--verify` flag outputs `true` or `false` and can be used in scripts:
+
+```bash
+if nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --verify --key nori.pub; then
+    echo "Signature verified!"
+    nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml
+else
+    echo "Signature verification failed!"
+    exit 1
+fi
+```
+
+### Signing in GitHub Actions
+
+Use keyless OIDC signing in GitHub Actions workflows:
+
+```yaml
+name: Publish Module
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write  # Required for keyless signing
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package and Sign Module
+        uses: eunanio/nori/action@v1
+        with:
+          registry: ghcr.io
+          repository: ${{ github.repository_owner }}/my-module
+          tag: ${{ github.ref_name }}
+          module-path: ./terraform
+          sign: 'true'  # Enable keyless OIDC signing
+```
+
+Keyless signing uses GitHub's OIDC provider to generate short-lived certificates, eliminating the need to manage signing keys.
 
 ## Registry Authentication
 

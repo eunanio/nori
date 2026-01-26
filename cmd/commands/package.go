@@ -9,7 +9,10 @@ import (
 
 	"github.com/eunanio/nori/pkg/oci"
 	"github.com/eunanio/nori/pkg/packaging"
+	"github.com/eunanio/nori/pkg/signing"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 type packageOptions struct {
@@ -18,6 +21,10 @@ type packageOptions struct {
 	annotations []string
 	packageOnly bool
 	output      string
+	// Signing options
+	sign    bool
+	keyPath string
+	keyless bool
 }
 
 func newPackageCommand() *cobra.Command {
@@ -52,7 +59,13 @@ Examples:
   nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.tar.gz --package-only
 
   # Package to a specific output file
-  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.tar.gz --package-only --output ./dist/module.zip`,
+  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.tar.gz --package-only --output ./dist/module.zip
+
+  # Package and sign with a key file
+  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --key nori.key
+
+  # Package and sign using keyless/OIDC (for CI/CD environments)
+  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --keyless`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPackage(cmd, args, opts)
@@ -64,6 +77,11 @@ Examples:
 	cmd.Flags().StringArrayVar(&opts.annotations, "annotation", nil, "Custom OCI annotations (key=value)")
 	cmd.Flags().BoolVar(&opts.packageOnly, "package-only", false, "Package without pushing; write artifact to local file")
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "Output file path (used with --package-only)")
+
+	// Signing flags
+	cmd.Flags().BoolVar(&opts.sign, "sign", false, "Sign the artifact after pushing")
+	cmd.Flags().StringVar(&opts.keyPath, "key", "", "Path to private key file for signing")
+	cmd.Flags().BoolVar(&opts.keyless, "keyless", false, "Use keyless/OIDC signing (for CI/CD environments)")
 
 	return cmd
 }
@@ -79,6 +97,15 @@ func runPackage(cmd *cobra.Command, args []string, opts *packageOptions) error {
 	// Validate reference
 	if err := oci.ValidateReference(reference); err != nil {
 		return fmt.Errorf("invalid reference: %w", err)
+	}
+
+	// Validate signing options
+	if opts.sign && opts.packageOnly {
+		return fmt.Errorf("--sign cannot be used with --package-only")
+	}
+
+	if opts.sign && !opts.keyless && opts.keyPath == "" {
+		return fmt.Errorf("--sign requires either --key <path> or --keyless")
 	}
 
 	// Parse annotations
@@ -129,6 +156,68 @@ func runPackage(cmd *cobra.Command, args []string, opts *packageOptions) error {
 			fmt.Printf("    %s: %s\n", k, v)
 		}
 	}
+
+	// Handle signing if requested
+	if opts.sign {
+		fmt.Println()
+		if err := signArtifact(ctx, reference, opts); err != nil {
+			return fmt.Errorf("failed to sign artifact: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// signArtifact signs an OCI artifact.
+func signArtifact(ctx context.Context, reference string, opts *packageOptions) error {
+	log := getLogger()
+
+	// Parse reference
+	ref, err := name.ParseReference(reference)
+	if err != nil {
+		return fmt.Errorf("invalid reference: %w", err)
+	}
+
+	// Get remote options
+	client := getClient()
+	remoteOpts, err := client.RemoteOptions(ctx, oci.RegistryFromRef(ref))
+	if err != nil {
+		return fmt.Errorf("failed to get remote options: %w", err)
+	}
+
+	// Create signer options
+	signerOpts := []signing.SignerOption{
+		signing.WithSignerLogger(log),
+		signing.WithSignerInsecure(insecure),
+	}
+
+	if opts.keyless {
+		signerOpts = append(signerOpts, signing.WithKeyless(true))
+	} else {
+		// Prompt for key password
+		fmt.Print("Enter password for signing key: ")
+		password, err := term.ReadPassword(int(os.Stdin.Fd()))
+		if err != nil {
+			return fmt.Errorf("failed to read password: %w", err)
+		}
+		fmt.Println()
+
+		signerOpts = append(signerOpts,
+			signing.WithKeyPath(opts.keyPath),
+			signing.WithPassword(password),
+		)
+	}
+
+	signer := signing.NewSigner(signerOpts...)
+
+	fmt.Printf("Signing artifact %s...\n", reference)
+	signResult, err := signer.Sign(ctx, ref, remoteOpts...)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("✅ Artifact signed successfully\n")
+	fmt.Printf("  Signature: %s\n", signResult.SignatureRef)
 
 	return nil
 }

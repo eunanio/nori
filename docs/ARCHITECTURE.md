@@ -19,6 +19,7 @@ nori/
 │   ├── packaging/         # Module packaging
 │   ├── release/           # Local release management
 │   ├── runtime/           # OpenTofu runtime
+│   ├── signing/           # Cryptographic signing and verification
 │   └── state/             # OCI-based state storage
 ├── internal/
 │   └── util/              # Internal utilities
@@ -112,7 +113,31 @@ The `Manager` locates or provisions an OpenTofu binary. If OpenTofu is not fou
 
 ### Configuration (`pkg/config`)
 
-Nori configuration is stored in YAML format at `~/.nori/config.yaml`. Configuration includes the state repository location and registry-specific settings.
+Nori configuration is stored in YAML format at `~/.nori/config.yaml`. Configuration includes the state repository location and registry-specific settings.
+
+### Signing (`pkg/signing`)
+
+The `signing` package provides cryptographic signing and verification for OCI artifacts using cosign-compatible keys. It supports:
+
+- **Key Generation**: ECDSA P-256 key pairs with password-protected private keys
+- **Key-based Signing**: Sign artifacts using a private key file
+- **Keyless Signing**: OIDC-based signing for CI/CD environments (using Fulcio)
+- **Signature Verification**: Verify artifact signatures using public keys
+
+Signatures are stored as separate OCI artifacts following the cosign convention. For an artifact with digest `sha256:abc123...`, the signature is stored at the same repository with tag `sha256-abc123....sig`.
+
+The signature payload follows the cosign simple signing format:
+
+```json
+{
+  "critical": {
+    "identity": { "docker-reference": "ghcr.io/myorg/module" },
+    "image": { "docker-manifest-digest": "sha256:abc123..." },
+    "type": "cosign container image signature"
+  },
+  "optional": { "timestamp": 1234567890 }
+}
+```
 
 ## CLI Design
 
@@ -121,8 +146,9 @@ The CLI uses Cobra and follows standard conventions for help text, examples, and
 ```
 nori
 ├── config         Manage configuration
-│   ├── get        Retrieve configuration values
-│   └── set        Update configuration values
+│   ├── get              Retrieve configuration values
+│   ├── set              Update configuration values
+│   └── generate-key-pair Generate signing key pair
 ├── release        Release management
 │   ├── create     Create a new release
 │   ├── upgrade    Upgrade an existing release
@@ -267,7 +293,7 @@ Terraform state files may contain sensitive data. These are stored in OCI regist
 
 Potential enhancements under consideration:
 
-- Module signing and verification
 - Module caching
 - Parallel deployment execution
 - Rollback to previous release versions
+- Keyless signing integration with Rekor transparency log

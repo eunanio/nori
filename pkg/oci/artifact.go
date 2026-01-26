@@ -61,6 +61,18 @@ const (
 
 	// MediaTypeReadme is the media type for README content.
 	MediaTypeReadme = "text/markdown"
+
+	// AnnotationSigned indicates the artifact has been signed.
+	AnnotationSigned = "io.nori.signed"
+
+	// AnnotationSignatureRef contains the reference to the signature artifact.
+	AnnotationSignatureRef = "io.nori.signature.ref"
+
+	// AnnotationSignedBy contains information about who signed the artifact.
+	AnnotationSignedBy = "io.nori.signed.by"
+
+	// AnnotationSignedAt contains the timestamp when the artifact was signed.
+	AnnotationSignedAt = "io.nori.signed.at"
 )
 
 // Artifact represents an OCI artifact for a Terraform module.

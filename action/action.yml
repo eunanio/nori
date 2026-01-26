@@ -31,6 +31,10 @@ inputs:
     description: 'Allow insecure (HTTP) registry connections'
     required: false
     default: 'false'
+  sign:
+    description: 'Sign the artifact using keyless OIDC signing (requires id-token: write permission)'
+    required: false
+    default: 'false'
   username:
     description: 'Registry username (auto-detected for GHCR using github.actor)'
     required: false
@@ -45,6 +49,8 @@ outputs:
     description: 'Full OCI reference of the pushed artifact (registry/repository:tag)'
   digest:
     description: 'SHA256 digest of the pushed artifact'
+  signed:
+    description: 'Whether the artifact was signed (true/false)'
 
 runs:
   using: 'docker'
@@ -61,4 +67,5 @@ runs:
     - ${{ inputs.description }}
     - ${{ inputs.annotations }}
     - ${{ inputs.insecure }}
+    - ${{ inputs.sign }}
 

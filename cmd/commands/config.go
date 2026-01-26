@@ -2,11 +2,14 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/eunanio/nori/pkg/config"
+	"github.com/eunanio/nori/pkg/signing"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // Supported config properties and their descriptions
@@ -48,6 +51,7 @@ Examples:
 
 	cmd.AddCommand(newConfigSetCommand())
 	cmd.AddCommand(newConfigGetCommand())
+	cmd.AddCommand(newGenerateKeyPairCommand())
 
 	return cmd
 }
@@ -240,4 +244,80 @@ func listProperties() string {
 		sb.WriteString(fmt.Sprintf("  %s - %s\n", prop, desc))
 	}
 	return sb.String()
+}
+
+func newGenerateKeyPairCommand() *cobra.Command {
+	var outputDir string
+
+	cmd := &cobra.Command{
+		Use:   "generate-key-pair",
+		Short: "Generate a cosign-compatible key pair for signing artifacts",
+		Long: `Generate a new cosign-compatible key pair for signing OCI artifacts.
+
+The keys are stored in the specified directory (default: current directory):
+  - nori.key     (private key, password-protected)
+  - nori.pub     (public key)
+
+The generated keys are compatible with cosign and can be used with:
+  nori package --sign --key nori.key <reference> <module>
+
+Examples:
+  # Generate keys in current directory
+  nori config generate-key-pair
+
+  # Generate keys in specific directory
+  nori config generate-key-pair --output ~/.nori/keys
+
+  # Generate keys in nori config directory
+  nori config generate-key-pair --output ~/.nori`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGenerateKeyPair(outputDir)
+		},
+	}
+
+	cmd.Flags().StringVarP(&outputDir, "output", "o", ".", "Output directory for key files")
+
+	return cmd
+}
+
+func runGenerateKeyPair(outputDir string) error {
+	// Prompt for password
+	fmt.Print("Enter password for private key: ")
+	password1, err := term.ReadPassword(int(os.Stdin.Fd()))
+	if err != nil {
+		return fmt.Errorf("failed to read password: %w", err)
+	}
+	fmt.Println()
+
+	fmt.Print("Enter password again: ")
+	password2, err := term.ReadPassword(int(os.Stdin.Fd()))
+	if err != nil {
+		return fmt.Errorf("failed to read password: %w", err)
+	}
+	fmt.Println()
+
+	// Verify passwords match
+	if string(password1) != string(password2) {
+		return fmt.Errorf("passwords do not match")
+	}
+
+	if len(password1) == 0 {
+		return fmt.Errorf("password cannot be empty")
+	}
+
+	// Generate the key pair
+	result, err := signing.GenerateKeyPair(outputDir, password1)
+	if err != nil {
+		return fmt.Errorf("failed to generate key pair: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println("✓ Key pair generated successfully")
+	fmt.Printf("  Private key: %s\n", result.PrivateKeyPath)
+	fmt.Printf("  Public key:  %s\n", result.PublicKeyPath)
+	fmt.Println()
+	fmt.Println("To sign artifacts:")
+	fmt.Printf("  nori package --sign --key %s <reference> <module>\n", result.PrivateKeyPath)
+
+	return nil
 }

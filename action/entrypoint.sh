@@ -14,6 +14,7 @@ MODULE_PATH="${4}"
 DESCRIPTION="${5:-}"
 ANNOTATIONS="${6:-{}}"
 INSECURE="${7:-false}"
+SIGN="${8:-false}"
 
 # =============================================================================
 # Validation
@@ -51,6 +52,7 @@ echo "Tag: ${TAG}"
 echo "Module Path: ${MODULE_PATH}"
 echo "Description: ${DESCRIPTION:-<not set>}"
 echo "Insecure: ${INSECURE}"
+echo "Sign: ${SIGN}"
 
 # Log authentication method (without exposing secrets)
 if [[ -n "${NORI_REGISTRY_USERNAME:-}" && -n "${NORI_REGISTRY_PASSWORD:-}" ]]; then
@@ -115,6 +117,12 @@ if [[ "${INSECURE}" == "true" ]]; then
     NORI_ARGS+=("--insecure")
 fi
 
+# Add signing flags if enabled (uses keyless OIDC in GitHub Actions)
+if [[ "${SIGN}" == "true" ]]; then
+    NORI_ARGS+=("--sign" "--keyless")
+    echo "Signing enabled (keyless OIDC)"
+fi
+
 # Parse and add annotations from JSON
 if [[ "${ANNOTATIONS}" != "{}" && -n "${ANNOTATIONS}" ]]; then
     echo "Parsing annotations..."
@@ -158,13 +166,18 @@ fi
 # Set outputs using GitHub Actions output syntax
 echo "reference=${REFERENCE}" >> "${GITHUB_OUTPUT}"
 echo "digest=${DIGEST}" >> "${GITHUB_OUTPUT}"
+echo "signed=${SIGN}" >> "${GITHUB_OUTPUT}"
 
 echo "Reference: ${REFERENCE}"
 echo "Digest: ${DIGEST}"
+echo "Signed: ${SIGN}"
 echo "::endgroup::"
 
 echo ""
 echo "✓ Module packaged and pushed successfully!"
 echo "  Reference: ${REFERENCE}"
 echo "  Digest: ${DIGEST}"
+if [[ "${SIGN}" == "true" ]]; then
+    echo "  Signed: Yes (keyless OIDC)"
+fi
 

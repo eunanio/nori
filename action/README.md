@@ -303,6 +303,7 @@ git push origin vpc-v2.1.0
 | `description` | Module description for OCI annotations | No | `""` |
 | `annotations` | Custom OCI annotations as JSON object | No | `{}` |
 | `insecure` | Allow insecure (HTTP) registry connections | No | `false` |
+| `sign` | Sign the artifact using keyless OIDC signing | No | `false` |
 
 ## Outputs
 
@@ -310,6 +311,62 @@ git push origin vpc-v2.1.0
 |--------|-------------|
 | `reference` | Full OCI reference of the pushed artifact (`registry/repository:tag`) |
 | `digest` | SHA256 digest of the pushed artifact |
+| `signed` | Whether the artifact was signed (`true`/`false`) |
+
+## Artifact Signing
+
+Enable cryptographic signing of artifacts using keyless OIDC. This uses GitHub's OIDC provider to generate short-lived signing certificates, eliminating the need to manage signing keys.
+
+### Basic Signed Workflow
+
+```yaml
+name: Publish Signed Module
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write  # Required for keyless signing
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package and Sign Module
+        uses: eunanio/nori/action@v1
+        with:
+          registry: ghcr.io
+          repository: ${{ github.repository_owner }}/my-module
+          tag: ${{ github.ref_name }}
+          module-path: ./terraform
+          sign: 'true'
+```
+
+**Important:** The `id-token: write` permission is required for keyless OIDC signing.
+
+### Verifying Signed Artifacts
+
+After publishing a signed artifact, you can verify it using the Nori CLI:
+
+```bash
+# Check if artifact is signed
+nori inspect ghcr.io/myorg/my-module:v1.0.0
+
+# Verify signature (requires public key for key-based signatures)
+nori inspect ghcr.io/myorg/my-module:v1.0.0 --verify
+```
 
 ## Registry Examples
 
