@@ -31,6 +31,18 @@ inputs:
     description: 'Allow insecure (HTTP) registry connections'
     required: false
     default: 'false'
+  sign:
+    description: 'Sign the artifact using a signing key'
+    required: false
+    default: 'false'
+  sign-key:
+    description: 'Base64-encoded signing key content (use secrets to store)'
+    required: false
+    default: ''
+  sign-password:
+    description: 'Password for the signing key (use secrets to store)'
+    required: false
+    default: ''
   username:
     description: 'Registry username (auto-detected for GHCR using github.actor)'
     required: false
@@ -45,6 +57,8 @@ outputs:
     description: 'Full OCI reference of the pushed artifact (registry/repository:tag)'
   digest:
     description: 'SHA256 digest of the pushed artifact'
+  signed:
+    description: 'Whether the artifact was signed (true/false)'
 
 runs:
   using: 'docker'
@@ -53,6 +67,8 @@ runs:
     GITHUB_TOKEN: ${{ github.token }}
     NORI_REGISTRY_USERNAME: ${{ inputs.username }}
     NORI_REGISTRY_PASSWORD: ${{ inputs.token }}
+    NORI_SIGN_KEY: ${{ inputs.sign-key }}
+    NORI_SIGN_PASSWORD: ${{ inputs.sign-password }}
   args:
     - ${{ inputs.registry }}
     - ${{ inputs.repository }}
@@ -61,4 +77,5 @@ runs:
     - ${{ inputs.description }}
     - ${{ inputs.annotations }}
     - ${{ inputs.insecure }}
+    - ${{ inputs.sign }}
 

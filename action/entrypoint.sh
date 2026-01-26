@@ -14,6 +14,7 @@ MODULE_PATH="${4}"
 DESCRIPTION="${5:-}"
 ANNOTATIONS="${6:-{}}"
 INSECURE="${7:-false}"
+SIGN="${8:-false}"
 
 # =============================================================================
 # Validation
@@ -51,6 +52,7 @@ echo "Tag: ${TAG}"
 echo "Module Path: ${MODULE_PATH}"
 echo "Description: ${DESCRIPTION:-<not set>}"
 echo "Insecure: ${INSECURE}"
+echo "Sign: ${SIGN}"
 
 # Log authentication method (without exposing secrets)
 if [[ -n "${NORI_REGISTRY_USERNAME:-}" && -n "${NORI_REGISTRY_PASSWORD:-}" ]]; then
@@ -115,6 +117,30 @@ if [[ "${INSECURE}" == "true" ]]; then
     NORI_ARGS+=("--insecure")
 fi
 
+# Add signing flags if enabled
+if [[ "${SIGN}" == "true" ]]; then
+    if [[ -z "${NORI_SIGN_KEY:-}" ]]; then
+        echo "::error::Signing requires 'sign-key' input when 'sign' is enabled"
+        exit 1
+    fi
+    if [[ -z "${NORI_SIGN_PASSWORD:-}" ]]; then
+        echo "::error::Signing requires 'sign-password' input when 'sign' is enabled"
+        exit 1
+    fi
+    
+    # Decode and write key to temp file
+    KEY_FILE="/tmp/nori-sign.key"
+    echo "${NORI_SIGN_KEY}" | base64 -d > "${KEY_FILE}"
+    chmod 600 "${KEY_FILE}"
+    
+    NORI_ARGS+=("--sign" "--key" "${KEY_FILE}")
+    
+    # Export password for nori to use
+    export NORI_SIGN_PASSWORD
+    
+    echo "Signing enabled (key-based)"
+fi
+
 # Parse and add annotations from JSON
 if [[ "${ANNOTATIONS}" != "{}" && -n "${ANNOTATIONS}" ]]; then
     echo "Parsing annotations..."
@@ -158,13 +184,20 @@ fi
 # Set outputs using GitHub Actions output syntax
 echo "reference=${REFERENCE}" >> "${GITHUB_OUTPUT}"
 echo "digest=${DIGEST}" >> "${GITHUB_OUTPUT}"
+echo "signed=${SIGN}" >> "${GITHUB_OUTPUT}"
 
 echo "Reference: ${REFERENCE}"
 echo "Digest: ${DIGEST}"
+echo "Signed: ${SIGN}"
 echo "::endgroup::"
 
 echo ""
 echo "✓ Module packaged and pushed successfully!"
 echo "  Reference: ${REFERENCE}"
 echo "  Digest: ${DIGEST}"
+if [[ "${SIGN}" == "true" ]]; then
+    echo "  Signed: Yes"
+    # Clean up key file
+    rm -f /tmp/nori-sign.key
+fi
 

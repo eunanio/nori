@@ -55,6 +55,24 @@ const (
 
 	// AnnotationModuleType is the annotation for module type.
 	AnnotationModuleType = "io.nori.module.type"
+
+	// AnnotationReadme indicates the artifact contains a README layer.
+	AnnotationReadme = "io.nori.readme"
+
+	// MediaTypeReadme is the media type for README content.
+	MediaTypeReadme = "text/markdown"
+
+	// AnnotationSigned indicates the artifact has been signed.
+	AnnotationSigned = "io.nori.signed"
+
+	// AnnotationSignatureRef contains the reference to the signature artifact.
+	AnnotationSignatureRef = "io.nori.signature.ref"
+
+	// AnnotationSignedBy contains information about who signed the artifact.
+	AnnotationSignedBy = "io.nori.signed.by"
+
+	// AnnotationSignedAt contains the timestamp when the artifact was signed.
+	AnnotationSignedAt = "io.nori.signed.at"
 )
 
 // Artifact represents an OCI artifact for a Terraform module.
@@ -182,6 +200,13 @@ func (i *artifactTypeImage) Digest() (v1.Hash, error) {
 // PushArtifact pushes an artifact to a registry.
 // The artifact is pushed in OpenTofu-compatible format with artifactType and archive/zip media type.
 func (c *Client) PushArtifact(ctx context.Context, ref name.Reference, content []byte, annotations map[string]string) (*Artifact, error) {
+	return c.PushArtifactWithReadme(ctx, ref, content, nil, annotations)
+}
+
+// PushArtifactWithReadme pushes an artifact to a registry with an optional README layer.
+// The artifact is pushed in OpenTofu-compatible format with artifactType and archive/zip media type.
+// If readmeContent is provided, it is stored as a separate layer with text/markdown media type.
+func (c *Client) PushArtifactWithReadme(ctx context.Context, ref name.Reference, content []byte, readmeContent []byte, annotations map[string]string) (*Artifact, error) {
 	c.logger.Info("pushing artifact", "reference", ref.String())
 
 	registry := RegistryFromRef(ref)
@@ -223,6 +248,52 @@ func (c *Client) PushArtifact(ctx context.Context, ref name.Reference, content [
 		return nil, fmt.Errorf("failed to add layer: %w", err)
 	}
 
+	// Build layer info for return value
+	layerInfos := []LayerInfo{}
+
+	moduleDigest, err := moduleLayer.Digest()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get layer digest: %w", err)
+	}
+
+	moduleSize, err := moduleLayer.Size()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get layer size: %w", err)
+	}
+
+	layerInfos = append(layerInfos, LayerInfo{
+		Digest:    moduleDigest.String(),
+		Size:      moduleSize,
+		MediaType: MediaTypeModuleZip,
+	})
+
+	// Add README layer if provided
+	if len(readmeContent) > 0 {
+		readmeLayer := NewLayer(readmeContent, MediaTypeReadme)
+		img, err = mutate.AppendLayers(img, readmeLayer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add README layer: %w", err)
+		}
+
+		readmeDigest, err := readmeLayer.Digest()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get README layer digest: %w", err)
+		}
+
+		readmeSize, err := readmeLayer.Size()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get README layer size: %w", err)
+		}
+
+		layerInfos = append(layerInfos, LayerInfo{
+			Digest:    readmeDigest.String(),
+			Size:      readmeSize,
+			MediaType: MediaTypeReadme,
+		})
+
+		c.logger.Debug("README layer added", "size", readmeSize)
+	}
+
 	// Set annotations
 	allAnnotations := make(map[string]string)
 	allAnnotations[AnnotationCreated] = config.Created.Format(time.RFC3339)
@@ -255,16 +326,6 @@ func (c *Client) PushArtifact(ctx context.Context, ref name.Reference, content [
 		return nil, fmt.Errorf("failed to get digest: %w", err)
 	}
 
-	moduleDigest, err := moduleLayer.Digest()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get layer digest: %w", err)
-	}
-
-	moduleSize, err := moduleLayer.Size()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get layer size: %w", err)
-	}
-
 	c.logger.Info("artifact pushed successfully",
 		"reference", ref.String(),
 		"digest", digest.String(),
@@ -274,14 +335,8 @@ func (c *Client) PushArtifact(ctx context.Context, ref name.Reference, content [
 		Reference:   ref,
 		Digest:      digest.String(),
 		Annotations: allAnnotations,
-		Layers: []LayerInfo{
-			{
-				Digest:    moduleDigest.String(),
-				Size:      moduleSize,
-				MediaType: MediaTypeModuleZip,
-			},
-		},
-		Config: configBytes,
+		Layers:      layerInfos,
+		Config:      configBytes,
 	}, nil
 }
 
@@ -375,6 +430,49 @@ func extractLayerContent(layer v1.Layer) ([]byte, error) {
 	defer rc.Close()
 
 	return io.ReadAll(rc)
+}
+
+// PullReadme pulls only the README layer from an artifact.
+// Returns nil if the artifact has no README layer.
+func (c *Client) PullReadme(ctx context.Context, ref name.Reference) ([]byte, error) {
+	c.logger.Debug("pulling README", "reference", ref.String())
+
+	registry := RegistryFromRef(ref)
+	opts, err := c.RemoteOptions(ctx, registry)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get remote options: %w", err)
+	}
+
+	// Pull the image
+	img, err := remote.Image(ref, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pull artifact: %w", err)
+	}
+
+	// Get layers
+	layers, err := img.Layers()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get layers: %w", err)
+	}
+
+	// Find the README layer by media type
+	for _, layer := range layers {
+		mediaType, err := layer.MediaType()
+		if err != nil {
+			continue
+		}
+
+		if string(mediaType) == MediaTypeReadme {
+			content, err := extractLayerContent(layer)
+			if err != nil {
+				return nil, fmt.Errorf("failed to extract README content: %w", err)
+			}
+			c.logger.Debug("README pulled successfully", "size", len(content))
+			return content, nil
+		}
+	}
+
+	return nil, nil // No README layer found
 }
 
 // InspectArtifact retrieves metadata about an artifact without downloading it.

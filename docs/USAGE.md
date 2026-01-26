@@ -7,10 +7,11 @@ This guide provides detailed instructions for using Nori to manage OpenTofu modu
 1. [Getting Started](#getting-started)
 2. [Configuration](#configuration)
 3. [Packaging Modules](#packaging-modules)
-4. [Registry Authentication](#registry-authentication)
-5. [Release Management](#release-management)
-6. [Working with Registries](#working-with-registries)
-7. [Advanced Usage](#advanced-usage)
+4. [Artifact Signing](#artifact-signing)
+5. [Registry Authentication](#registry-authentication)
+6. [Release Management](#release-management)
+7. [Working with Registries](#working-with-registries)
+8. [Advanced Usage](#advanced-usage)
 
 ## Getting Started
 
@@ -146,6 +147,145 @@ The `--package-only` flag:
 - Builds OCI annotations from metadata
 - Writes the processed artifact to a local file
 - Outputs instructions for pushing later with `nori push`
+
+### README Auto-Detection
+
+Nori automatically detects `README.md` files at the root of your module archive. When a README is found:
+
+- The README content is stored as a separate layer in the OCI artifact
+- The `io.nori.readme` annotation is added to the manifest
+- Users can view the README using `nori inspect --readme`
+
+This allows module consumers to view documentation without downloading the entire module.
+
+## Artifact Signing
+
+Nori supports cryptographic signing of OCI artifacts using cosign-compatible keys. This allows you to verify the authenticity and integrity of modules before deployment.
+
+### Generating Signing Keys
+
+Generate a new key pair for signing artifacts:
+
+```bash
+# Generate keys in default location (~/.nori) and auto-configure
+nori config generate-key-pair
+
+# Generate keys in a specific directory
+nori config generate-key-pair --output ~/.nori/keys
+```
+
+You will be prompted to enter a password to protect the private key. After generation, the key path is automatically saved to your config file.
+
+### Signing Artifacts
+
+Sign an artifact when packaging:
+
+```bash
+# Package and sign (uses key from config)
+nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign
+
+# Package and sign with a specific key file (overrides config)
+nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --key /path/to/nori.key
+```
+
+When signing, you will be prompted for the private key password unless configured via environment variable.
+
+### Config-Based Signing
+
+Configure signing in `~/.nori/config.yaml`:
+
+```yaml
+signing:
+  key_path: ~/.nori/nori.key
+  password_env: NORI_SIGN_PASSWORD  # Optional: env var containing password
+```
+
+With this configured, simply use `--sign` without specifying the key:
+
+```bash
+# Uses key from config, prompts for password
+nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign
+
+# In CI/CD, set NORI_SIGN_PASSWORD env var to avoid prompt
+export NORI_SIGN_PASSWORD=your-password
+nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign
+```
+
+### Verifying Signatures
+
+Check if an artifact is signed and verify its signature:
+
+```bash
+# Inspect an artifact (shows signature status)
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0
+
+# Verify signature with a public key
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --key nori.pub
+
+# Simple verification check (returns true/false)
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --verify
+
+# Verify with specific public key
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --verify --key nori.pub
+```
+
+The `--verify` flag outputs `true` or `false` and can be used in scripts:
+
+```bash
+if nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --verify --key nori.pub; then
+    echo "Signature verified!"
+    nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml
+else
+    echo "Signature verification failed!"
+    exit 1
+fi
+```
+
+### Signing in GitHub Actions
+
+Use key-based signing in GitHub Actions workflows by storing your key and password as secrets:
+
+```yaml
+name: Publish Module
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package and Sign Module
+        uses: eunanio/nori/action@v1
+        with:
+          registry: ghcr.io
+          repository: ${{ github.repository_owner }}/my-module
+          tag: ${{ github.ref_name }}
+          module-path: ./terraform
+          sign: 'true'
+          sign-key: ${{ secrets.NORI_SIGN_KEY }}
+          sign-password: ${{ secrets.NORI_SIGN_PASSWORD }}
+```
+
+To set up signing keys for GitHub Actions:
+1. Generate keys locally: `nori config generate-key-pair`
+2. Base64 encode the private key: `base64 -i ~/.nori/nori.key`
+3. Add `NORI_SIGN_KEY` secret with the base64 content
+4. Add `NORI_SIGN_PASSWORD` secret with the key password
 
 ## Registry Authentication
 
@@ -402,6 +542,11 @@ nori inspect ghcr.io/myorg/s3-bucket:v1.0.0
 JSON output for scripting:
 ```bash
 nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --format json
+```
+
+View the module's README (if available):
+```bash
+nori inspect ghcr.io/myorg/s3-bucket:v1.0.0 --readme
 ```
 
 ### Pulling Artifacts

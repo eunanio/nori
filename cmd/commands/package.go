@@ -9,7 +9,10 @@ import (
 
 	"github.com/eunanio/nori/pkg/oci"
 	"github.com/eunanio/nori/pkg/packaging"
+	"github.com/eunanio/nori/pkg/signing"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 type packageOptions struct {
@@ -18,6 +21,9 @@ type packageOptions struct {
 	annotations []string
 	packageOnly bool
 	output      string
+	// Signing options
+	sign    bool
+	keyPath string
 }
 
 func newPackageCommand() *cobra.Command {
@@ -52,7 +58,13 @@ Examples:
   nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.tar.gz --package-only
 
   # Package to a specific output file
-  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.tar.gz --package-only --output ./dist/module.zip`,
+  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.tar.gz --package-only --output ./dist/module.zip
+
+  # Package and sign (uses key from config if configured)
+  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign
+
+  # Package and sign with explicit key file
+  nori package ghcr.io/myorg/s3-bucket:v1.0.0 module.zip --sign --key nori.key`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPackage(cmd, args, opts)
@@ -64,6 +76,10 @@ Examples:
 	cmd.Flags().StringArrayVar(&opts.annotations, "annotation", nil, "Custom OCI annotations (key=value)")
 	cmd.Flags().BoolVar(&opts.packageOnly, "package-only", false, "Package without pushing; write artifact to local file")
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "", "Output file path (used with --package-only)")
+
+	// Signing flags
+	cmd.Flags().BoolVar(&opts.sign, "sign", false, "Sign the artifact after pushing (uses key from config if not specified)")
+	cmd.Flags().StringVar(&opts.keyPath, "key", "", "Path to private key file for signing (overrides config)")
 
 	return cmd
 }
@@ -79,6 +95,21 @@ func runPackage(cmd *cobra.Command, args []string, opts *packageOptions) error {
 	// Validate reference
 	if err := oci.ValidateReference(reference); err != nil {
 		return fmt.Errorf("invalid reference: %w", err)
+	}
+
+	// Validate signing options
+	if opts.sign && opts.packageOnly {
+		return fmt.Errorf("--sign cannot be used with --package-only")
+	}
+
+	// If signing without explicit key, try to use key from config
+	if opts.sign && opts.keyPath == "" {
+		cfg := getConfig()
+		if cfg.Signing.KeyPath != "" {
+			opts.keyPath = cfg.Signing.KeyPath
+		} else {
+			return fmt.Errorf("--sign requires --key <path> or signing.key_path in config\n\nTo configure, run:\n  nori config generate-key-pair")
+		}
 	}
 
 	// Parse annotations
@@ -118,12 +149,84 @@ func runPackage(cmd *cobra.Command, args []string, opts *packageOptions) error {
 	fmt.Printf("  Digest:    %s\n", result.Digest)
 	fmt.Printf("  Size:      %d bytes\n", result.Size)
 
+	// Show README status
+	if result.Annotations[oci.AnnotationReadme] == "true" {
+		fmt.Printf("  README:    Included\n")
+	}
+
 	if len(result.Annotations) > 0 {
 		fmt.Printf("  Annotations:\n")
 		for k, v := range result.Annotations {
 			fmt.Printf("    %s: %s\n", k, v)
 		}
 	}
+
+	// Handle signing if requested
+	if opts.sign {
+		fmt.Println()
+		if err := signArtifact(ctx, reference, opts); err != nil {
+			return fmt.Errorf("failed to sign artifact: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// signArtifact signs an OCI artifact.
+func signArtifact(ctx context.Context, reference string, opts *packageOptions) error {
+	log := getLogger()
+
+	// Parse reference
+	ref, err := name.ParseReference(reference)
+	if err != nil {
+		return fmt.Errorf("invalid reference: %w", err)
+	}
+
+	// Get remote options
+	client := getClient()
+	remoteOpts, err := client.RemoteOptions(ctx, oci.RegistryFromRef(ref))
+	if err != nil {
+		return fmt.Errorf("failed to get remote options: %w", err)
+	}
+
+	// Get password - try environment variable first, then prompt
+	cfg := getConfig()
+	var password []byte
+
+	if cfg.Signing.PasswordEnv != "" {
+		if envPassword := os.Getenv(cfg.Signing.PasswordEnv); envPassword != "" {
+			password = []byte(envPassword)
+		}
+	}
+
+	if password == nil {
+		// Prompt for key password
+		fmt.Print("Enter password for signing key: ")
+		password, err = term.ReadPassword(int(os.Stdin.Fd()))
+		if err != nil {
+			return fmt.Errorf("failed to read password: %w", err)
+		}
+		fmt.Println()
+	}
+
+	// Create signer options
+	signerOpts := []signing.SignerOption{
+		signing.WithSignerLogger(log),
+		signing.WithSignerInsecure(insecure),
+		signing.WithKeyPath(opts.keyPath),
+		signing.WithPassword(password),
+	}
+
+	signer := signing.NewSigner(signerOpts...)
+
+	fmt.Printf("Signing artifact %s...\n", reference)
+	signResult, err := signer.Sign(ctx, ref, remoteOpts...)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("✅ Artifact signed successfully\n")
+	fmt.Printf("  Signature: %s\n", signResult.SignatureRef)
 
 	return nil
 }
@@ -157,6 +260,12 @@ func runPackageOnly(ctx context.Context, packager *packaging.Packager, reference
 	fmt.Printf("✓ Module packaged successfully\n")
 	fmt.Printf("  Output:    %s\n", outputPath)
 	fmt.Printf("  Size:      %d bytes\n", result.Size)
+
+	// Show README status
+	if result.ReadmeContent != nil {
+		fmt.Printf("  README:    Detected (%d bytes)\n", len(result.ReadmeContent))
+	}
+
 	fmt.Printf("\nTo push this package to a registry, run:\n")
 	fmt.Printf("  nori push %s %s\n", reference, outputPath)
 

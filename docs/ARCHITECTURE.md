@@ -19,6 +19,7 @@ nori/
 │   ├── packaging/         # Module packaging
 │   ├── release/           # Local release management
 │   ├── runtime/           # OpenTofu runtime
+│   ├── signing/           # Cryptographic signing and verification
 │   └── state/             # OCI-based state storage
 ├── internal/
 │   └── util/              # Internal utilities
@@ -76,16 +77,20 @@ The `GenerateMainTF` function produces Terraform configuration from a `Module
 
 ### Packaging (`pkg/packaging`)
 
-The `Packager` converts module archives into OCI artifacts. Input archives may be `.zip` or `.tar.gz` format; zip archives are converted to tar.gz for ORAS compatibility. The packager validates archive contents and extracts Terraform metadata during processing.
+The `Packager` converts module archives into OCI artifacts. Input archives may be `.zip` or `.tar.gz` format; tar.gz archives are converted to zip for OpenTofu compatibility. The packager validates archive contents and extracts Terraform metadata during processing.
+
+The packager automatically detects `README.md` files at the root of the module archive. When present, the README is stored as a separate layer and the `io.nori.readme` annotation is added to the manifest.
 
 Module artifacts are structured as follows:
 
 ```
-OCI Manifest
+OCI Manifest (with io.nori.readme annotation if README present)
 ├── Config Layer (application/vnd.oci.image.config.v1+json)
 │   └── Module metadata (created, version, type)
-└── Module Layer (application/vnd.oci.image.layer.v1.tar+gzip)
-    └── Compressed module content
+├── Module Layer (archive/zip)
+│   └── Compressed module content
+└── README Layer (text/markdown) [optional]
+    └── README.md content
 ```
 
 ### Deployment (`pkg/deploy`)
@@ -108,7 +113,31 @@ The `Manager` locates or provisions an OpenTofu binary. If OpenTofu is not fou
 
 ### Configuration (`pkg/config`)
 
-Nori configuration is stored in YAML format at `~/.nori/config.yaml`. Configuration includes the state repository location and registry-specific settings.
+Nori configuration is stored in YAML format at `~/.nori/config.yaml`. Configuration includes the state repository location and registry-specific settings.
+
+### Signing (`pkg/signing`)
+
+The `signing` package provides cryptographic signing and verification for OCI artifacts using cosign-compatible keys. It supports:
+
+- **Key Generation**: ECDSA P-256 key pairs with password-protected private keys
+- **Key-based Signing**: Sign artifacts using a private key file
+- **Signature Verification**: Verify artifact signatures using public keys
+- **Config-based Keys**: Signing key path can be stored in configuration for convenience
+
+Signatures are stored as separate OCI artifacts following the cosign convention. For an artifact with digest `sha256:abc123...`, the signature is stored at the same repository with tag `sha256-abc123....sig`.
+
+The signature payload follows the cosign simple signing format:
+
+```json
+{
+  "critical": {
+    "identity": { "docker-reference": "ghcr.io/myorg/module" },
+    "image": { "docker-manifest-digest": "sha256:abc123..." },
+    "type": "cosign container image signature"
+  },
+  "optional": { "timestamp": 1234567890 }
+}
+```
 
 ## CLI Design
 
@@ -117,8 +146,9 @@ The CLI uses Cobra and follows standard conventions for help text, examples, and
 ```
 nori
 ├── config         Manage configuration
-│   ├── get        Retrieve configuration values
-│   └── set        Update configuration values
+│   ├── get              Retrieve configuration values
+│   ├── set              Update configuration values
+│   └── generate-key-pair Generate signing key pair
 ├── release        Release management
 │   ├── create     Create a new release
 │   ├── upgrade    Upgrade an existing release
@@ -132,7 +162,7 @@ nori
 ├── push           Upload artifact to registry
 ├── deploy         Deploy module without release tracking
 ├── list           List artifact versions
-├── inspect        Display artifact metadata
+├── inspect        Display artifact metadata (--readme to view README)
 ├── login          Authenticate with registry
 ├── logout         Remove stored credentials
 └── version        Display version information
@@ -207,13 +237,19 @@ User Archive (.zip/.tar.gz)
     ↓
 Validate Archive
     ↓
-Convert to tar.gz (if required)
+Convert to zip (if tar.gz)
+    ↓
+Extract README.md (if present)
     ↓
 Create OCI Manifest
     ↓
 Attach Config Layer
     ↓
 Attach Module Layer
+    ↓
+Attach README Layer (if README found)
+    ↓
+Set io.nori.readme annotation (if README found)
     ↓
 Push to Registry
 ```
@@ -257,7 +293,6 @@ Terraform state files may contain sensitive data. These are stored in OCI regist
 
 Potential enhancements under consideration:
 
-- Module signing and verification
 - Module caching
 - Parallel deployment execution
 - Rollback to previous release versions

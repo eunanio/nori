@@ -28,6 +28,9 @@ type Config struct {
 
 	// Logging contains logging configuration.
 	Logging LoggingConfig `yaml:"logging,omitempty"`
+
+	// Signing contains signing configuration.
+	Signing SigningConfig `yaml:"signing,omitempty"`
 }
 
 // RegistryConfig contains configuration for a specific registry.
@@ -64,6 +67,16 @@ type LoggingConfig struct {
 
 	// Format is the log format (text, json).
 	Format string `yaml:"format,omitempty"`
+}
+
+// SigningConfig contains signing configuration.
+type SigningConfig struct {
+	// KeyPath is the path to the private signing key.
+	KeyPath string `yaml:"key_path,omitempty"`
+
+	// PasswordEnv is the environment variable containing the key password.
+	// If not set, user will be prompted interactively.
+	PasswordEnv string `yaml:"password_env,omitempty"`
 }
 
 // DefaultConfig returns the default configuration.

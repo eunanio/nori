@@ -2,7 +2,7 @@
 # Build and development tasks
 
 BINARY_NAME := nori
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "2.0.0-dev")
+VERSION := "1.1.0"
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)"
