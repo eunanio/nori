@@ -478,32 +478,6 @@ nori release upgrade my-bucket --auto-approve
 nori release upgrade my-bucket --plan-only
 ```
 
-Example output when infrastructure is in sync:
-```
-NAME: my-bucket
-STATUS: synced
-VERSION: v1.0.0
-MODULE: ghcr.io/myorg/s3-bucket:v1.0.0
-
-Drift check complete. Infrastructure is in sync.
-```
-
-Example output when drift is detected and corrected:
-```
-NAME: my-bucket
-STATUS: drift corrected
-VERSION: v1.0.0 -> v1.0.1
-MODULE: ghcr.io/myorg/s3-bucket:v1.0.0
-STATE: ghcr.io/myorg/nori-state:my-bucket-v1.0.1
-
-Drift corrected. Infrastructure is now in sync.
-```
-
-Use drift checks to:
-- Verify infrastructure matches the desired state
-- Detect and correct manual changes or configuration drift
-- Pick up upstream module fixes without changing the version tag
-
 ### Rollback on Failure
 
 Enable automatic rollback to restore infrastructure to its previous state if an upgrade fails:
@@ -637,27 +611,12 @@ nori push ghcr.io/myorg/s3-bucket:v1.1.0 module.tar.gz
 Use Nori-packaged modules directly in OpenTofu 1.10+:
 
 ```hcl
-terraform {
-  required_version = ">= 1.10"
-}
-
 module "s3_bucket" {
   source = "oci://ghcr.io/myorg/s3-bucket?tag=v1.0.0"
 
   bucket_name        = "my-bucket"
   versioning_enabled = true
 }
-```
-
-
-### Backend Configuration
-
-Pass backend configuration at deploy time:
-```bash
-nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml \
-  --backend-config bucket=my-tf-state \
-  --backend-config key=s3-bucket/terraform.tfstate \
-  --backend-config region=us-east-1
 ```
 
 ### Targeting Resources
