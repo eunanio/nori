@@ -398,6 +398,21 @@ func (s *StateStore) GetLatestVersion(ctx context.Context, stateRepository, rele
 	return history.Versions[0].Version, nil
 }
 
+// GetLastSuccessfulVersion returns the most recent version with StatusDeployed.
+func (s *StateStore) GetLastSuccessfulVersion(ctx context.Context, stateRepository, releaseName string) (string, error) {
+	history, err := s.GetReleaseHistory(ctx, stateRepository, releaseName)
+	if err != nil {
+		return "", err
+	}
+
+	for _, v := range history.Versions {
+		if v.Status == StatusDeployed {
+			return v.Version, nil
+		}
+	}
+	return "", nil
+}
+
 // ReleaseExists checks if a release exists in the state repository.
 func (s *StateStore) ReleaseExists(ctx context.Context, stateRepository, releaseName string) (bool, error) {
 	_, err := s.GetLatestVersion(ctx, stateRepository, releaseName)

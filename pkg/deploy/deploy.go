@@ -17,6 +17,7 @@ import (
 	"github.com/eunanio/nori/pkg/oci"
 	"github.com/eunanio/nori/pkg/release"
 	"github.com/eunanio/nori/pkg/runtime"
+	"github.com/eunanio/nori/pkg/state"
 	"github.com/google/go-containerregistry/pkg/name"
 	"gopkg.in/yaml.v3"
 )
@@ -746,6 +747,113 @@ func (d *Deployer) DeployRelease(ctx context.Context, rel *release.Release, stor
 		}
 	}
 
+	return result, nil
+}
+
+// RollbackRelease restores infrastructure to a previous release state.
+func (d *Deployer) RollbackRelease(ctx context.Context, releaseName string, previousState *state.ReleaseState, store *release.Store, opts ReleaseDeployOptions) (*DeployResult, error) {
+	d.logger.Info("rolling back release", "name", releaseName, "target_version", previousState.Metadata.Version)
+
+	ref, err := name.ParseReference(previousState.Metadata.ModuleRef)
+	if err != nil {
+		return nil, fmt.Errorf("invalid module reference: %w", err)
+	}
+
+	workDir := store.GetWorkDir(releaseName)
+	moduleBaseDir := store.GetModuleDir(releaseName)
+
+	if err := os.MkdirAll(moduleBaseDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create module directory: %w", err)
+	}
+
+	if err := d.pullAndExtract(ctx, ref, moduleBaseDir); err != nil {
+		return nil, fmt.Errorf("failed to pull module: %w", err)
+	}
+
+	repoName := extractRepoName(ref)
+	moduleDir := filepath.Join(moduleBaseDir, repoName)
+
+	if len(previousState.MainTF) > 0 {
+		if err := os.WriteFile(filepath.Join(moduleDir, "main.tf"), previousState.MainTF, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write main.tf: %w", err)
+		}
+	}
+
+	if len(previousState.TFState) > 0 {
+		if err := os.WriteFile(filepath.Join(moduleDir, "terraform.tfstate"), previousState.TFState, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write terraform state: %w", err)
+		}
+	}
+
+	if len(previousState.Values) > 0 {
+		var values map[string]interface{}
+		if err := yaml.Unmarshal(previousState.Values, &values); err == nil && len(values) > 0 {
+			if err := d.writeVarFile(moduleDir, values); err != nil {
+				return nil, fmt.Errorf("failed to write var file: %w", err)
+			}
+		}
+	}
+
+	rel := &release.Release{
+		Name:      releaseName,
+		ModuleRef: previousState.Metadata.ModuleRef,
+	}
+	if err := d.writeBackendConfig(moduleDir, rel); err != nil {
+		return nil, fmt.Errorf("failed to write backend config: %w", err)
+	}
+
+	if err := d.initRelease(ctx, moduleDir, rel, ReleaseDeployOptions{Reconfigure: true}); err != nil {
+		return nil, fmt.Errorf("terraform init failed: %w", err)
+	}
+
+	planFile := filepath.Join(workDir, "tfplan-rollback")
+	planOpts := DeployOptions{Parallelism: opts.Parallelism}
+	hasChanges, err := d.plan(ctx, moduleDir, planFile, planOpts)
+	if err != nil {
+		return nil, fmt.Errorf("terraform plan failed: %w", err)
+	}
+
+	tfStatePath := filepath.Join(moduleDir, "terraform.tfstate")
+	result := &DeployResult{
+		ModuleRef:   previousState.Metadata.ModuleRef,
+		WorkDir:     workDir,
+		ModuleDir:   moduleDir,
+		PlanFile:    planFile,
+		TFStatePath: tfStatePath,
+		HasChanges:  hasChanges,
+		Applied:     false,
+	}
+
+	if hasChanges {
+		result.ApplyAttempted = true
+		applyOpts := DeployOptions{AutoApprove: true, Parallelism: opts.Parallelism}
+		applyErr := d.apply(ctx, moduleDir, planFile, applyOpts)
+
+		tfState, readErr := os.ReadFile(tfStatePath)
+		if readErr == nil {
+			result.TFState = tfState
+		}
+
+		if applyErr != nil {
+			return result, fmt.Errorf("rollback apply failed: %w", applyErr)
+		}
+		result.Applied = true
+
+		outputs, err := d.getOutputs(ctx, moduleDir)
+		if err != nil {
+			d.logger.Warn("failed to get outputs", "error", err)
+		} else {
+			result.Outputs = outputs
+		}
+	} else {
+		result.Applied = true
+		tfState, readErr := os.ReadFile(tfStatePath)
+		if readErr == nil {
+			result.TFState = tfState
+		}
+	}
+
+	d.logger.Info("rollback completed", "name", releaseName, "version", previousState.Metadata.Version)
 	return result, nil
 }
 

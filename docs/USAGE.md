@@ -458,6 +458,72 @@ nori release upgrade my-bucket -f values.yaml --reset-values
 nori release upgrade my-bucket -f values.yaml --annotation release-notes="Fixed bug"
 ```
 
+### Drift Check
+
+When you run `upgrade` without `-t` (tag) or `-f` (values) flags, it acts as a drift check. This mode:
+
+- Detects infrastructure drift (changes made outside of Nori)
+- Detects upstream module updates (same tag but updated content)
+- Only pushes new state if changes are applied
+- Keeps the version unchanged when no drift is found
+
+```bash
+# Check for drift (plan only by default)
+nori release upgrade my-bucket
+
+# Check for drift and auto-correct if found
+nori release upgrade my-bucket --auto-approve
+
+# Check for drift with plan-only output
+nori release upgrade my-bucket --plan-only
+```
+
+Example output when infrastructure is in sync:
+```
+NAME: my-bucket
+STATUS: synced
+VERSION: v1.0.0
+MODULE: ghcr.io/myorg/s3-bucket:v1.0.0
+
+Drift check complete. Infrastructure is in sync.
+```
+
+Example output when drift is detected and corrected:
+```
+NAME: my-bucket
+STATUS: drift corrected
+VERSION: v1.0.0 -> v1.0.1
+MODULE: ghcr.io/myorg/s3-bucket:v1.0.0
+STATE: ghcr.io/myorg/nori-state:my-bucket-v1.0.1
+
+Drift corrected. Infrastructure is now in sync.
+```
+
+Use drift checks to:
+- Verify infrastructure matches the desired state
+- Detect and correct manual changes or configuration drift
+- Pick up upstream module fixes without changing the version tag
+
+### Rollback on Failure
+
+Enable automatic rollback to restore infrastructure to its previous state if an upgrade fails:
+
+```bash
+# Upgrade with rollback protection
+nori release upgrade my-bucket -f values.yaml --rollback
+
+# Short form
+nori release upgrade my-bucket -f values.yaml --rof
+```
+
+When `--rollback` is enabled and the upgrade fails during the apply stage:
+
+1. Nori finds the last successfully deployed version
+2. Restores the terraform state and configuration from that version
+3. Applies the previous state to restore infrastructure
+
+This protects against partial deployment failures where some resources may have been modified before the failure occurred.
+
 ### Listing Releases
 
 View all releases stored in the state repository:
