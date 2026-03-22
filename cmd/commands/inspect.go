@@ -69,7 +69,7 @@ func runInspect(cmd *cobra.Command, args []string, opts *inspectOptions) error {
 	log.Info("inspecting artifact", "reference", reference)
 
 	// Parse reference
-	ref, err := name.ParseReference(reference)
+	ref, err := getClient().ParseReference(reference)
 	if err != nil {
 		return fmt.Errorf("invalid reference: %w", err)
 	}

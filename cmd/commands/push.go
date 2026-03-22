@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/eunanio/nori/internal/util"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 )
 
@@ -61,7 +60,7 @@ func runPush(cmd *cobra.Command, args []string, opts *pushOptions) error {
 	}
 
 	// Parse reference
-	ref, err := name.ParseReference(reference)
+	ref, err := getClient().ParseReference(reference)
 	if err != nil {
 		return fmt.Errorf("invalid reference: %w", err)
 	}

@@ -166,7 +166,7 @@ func (d *Deployer) Deploy(ctx context.Context, reference string, opts DeployOpti
 	d.logger.Info("deploying module", "reference", reference, "runtime", d.runtime)
 
 	// Parse reference
-	ref, err := name.ParseReference(reference)
+	ref, err := d.client.ParseReference(reference)
 	if err != nil {
 		return nil, fmt.Errorf("invalid reference: %w", err)
 	}
@@ -650,7 +650,7 @@ func (d *Deployer) DeployRelease(ctx context.Context, rel *release.Release, stor
 	d.logger.Info("deploying release", "name", rel.Name, "module", rel.ModuleRef, "version", rel.Version)
 
 	// Parse reference
-	ref, err := name.ParseReference(rel.ModuleRef)
+	ref, err := d.client.ParseReference(rel.ModuleRef)
 	if err != nil {
 		return nil, fmt.Errorf("invalid reference: %w", err)
 	}
@@ -754,7 +754,7 @@ func (d *Deployer) DeployRelease(ctx context.Context, rel *release.Release, stor
 func (d *Deployer) RollbackRelease(ctx context.Context, releaseName string, previousState *state.ReleaseState, store *release.Store, opts ReleaseDeployOptions) (*DeployResult, error) {
 	d.logger.Info("rolling back release", "name", releaseName, "target_version", previousState.Metadata.Version)
 
-	ref, err := name.ParseReference(previousState.Metadata.ModuleRef)
+	ref, err := d.client.ParseReference(previousState.Metadata.ModuleRef)
 	if err != nil {
 		return nil, fmt.Errorf("invalid module reference: %w", err)
 	}
@@ -927,7 +927,7 @@ func (d *Deployer) DestroyRelease(ctx context.Context, rel *release.Release, sto
 	d.logger.Info("destroying release", "name", rel.Name)
 
 	// Parse reference to get repo name (same as DeployRelease)
-	ref, err := name.ParseReference(rel.ModuleRef)
+	ref, err := d.client.ParseReference(rel.ModuleRef)
 	if err != nil {
 		return fmt.Errorf("invalid module reference: %w", err)
 	}

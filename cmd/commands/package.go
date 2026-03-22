@@ -10,7 +10,6 @@ import (
 	"github.com/eunanio/nori/pkg/oci"
 	"github.com/eunanio/nori/pkg/packaging"
 	"github.com/eunanio/nori/pkg/signing"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -93,7 +92,7 @@ func runPackage(cmd *cobra.Command, args []string, opts *packageOptions) error {
 	log.Info("packaging module", "reference", reference, "archive", archivePath)
 
 	// Validate reference
-	if err := oci.ValidateReference(reference); err != nil {
+	if err := oci.ValidateReference(reference, getClient().NameOptions()...); err != nil {
 		return fmt.Errorf("invalid reference: %w", err)
 	}
 
@@ -177,7 +176,7 @@ func signArtifact(ctx context.Context, reference string, opts *packageOptions) e
 	log := getLogger()
 
 	// Parse reference
-	ref, err := name.ParseReference(reference)
+	ref, err := getClient().ParseReference(reference)
 	if err != nil {
 		return fmt.Errorf("invalid reference: %w", err)
 	}

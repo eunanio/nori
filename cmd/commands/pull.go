@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 
 	"github.com/eunanio/nori/pkg/oci"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 )
 
@@ -52,7 +51,7 @@ func runPull(cmd *cobra.Command, args []string, opts *pullOptions) error {
 	log.Info("pulling module", "reference", reference)
 
 	// Parse reference
-	ref, err := name.ParseReference(reference)
+	ref, err := getClient().ParseReference(reference)
 	if err != nil {
 		return fmt.Errorf("invalid reference: %w", err)
 	}
