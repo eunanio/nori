@@ -458,6 +458,46 @@ nori release upgrade my-bucket -f values.yaml --reset-values
 nori release upgrade my-bucket -f values.yaml --annotation release-notes="Fixed bug"
 ```
 
+### Drift Check
+
+When you run `upgrade` without `-t` (tag) or `-f` (values) flags, it acts as a drift check. This mode:
+
+- Detects infrastructure drift (changes made outside of Nori)
+- Detects upstream module updates (same tag but updated content)
+- Only pushes new state if changes are applied
+- Keeps the version unchanged when no drift is found
+
+```bash
+# Check for drift (plan only by default)
+nori release upgrade my-bucket
+
+# Check for drift and auto-correct if found
+nori release upgrade my-bucket --auto-approve
+
+# Check for drift with plan-only output
+nori release upgrade my-bucket --plan-only
+```
+
+### Rollback on Failure
+
+Enable automatic rollback to restore infrastructure to its previous state if an upgrade fails:
+
+```bash
+# Upgrade with rollback protection
+nori release upgrade my-bucket -f values.yaml --rollback
+
+# Short form
+nori release upgrade my-bucket -f values.yaml --rof
+```
+
+When `--rollback` is enabled and the upgrade fails during the apply stage:
+
+1. Nori finds the last successfully deployed version
+2. Restores the terraform state and configuration from that version
+3. Applies the previous state to restore infrastructure
+
+This protects against partial deployment failures where some resources may have been modified before the failure occurred.
+
 ### Listing Releases
 
 View all releases stored in the state repository:
@@ -571,27 +611,12 @@ nori push ghcr.io/myorg/s3-bucket:v1.1.0 module.tar.gz
 Use Nori-packaged modules directly in OpenTofu 1.10+:
 
 ```hcl
-terraform {
-  required_version = ">= 1.10"
-}
-
 module "s3_bucket" {
   source = "oci://ghcr.io/myorg/s3-bucket?tag=v1.0.0"
 
   bucket_name        = "my-bucket"
   versioning_enabled = true
 }
-```
-
-
-### Backend Configuration
-
-Pass backend configuration at deploy time:
-```bash
-nori release create my-bucket ghcr.io/myorg/s3-bucket:v1.0.0 -f values.yaml \
-  --backend-config bucket=my-tf-state \
-  --backend-config key=s3-bucket/terraform.tfstate \
-  --backend-config region=us-east-1
 ```
 
 ### Targeting Resources

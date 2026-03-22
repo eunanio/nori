@@ -116,6 +116,37 @@ nori release create <release_name> <oci-tag> [flags]
 - `--upgrade` - Upgrade providers during init
 - `--description <text>` - Description for this release
 
+### `nori release upgrade`
+
+Upgrade an existing release with new values or module version, or check for drift.
+
+```bash
+nori release upgrade <release_name> [module-reference] [flags]
+```
+
+**Drift Check Mode:** When run without `-t` or `-f` flags, the command acts as a drift check - detecting infrastructure drift or upstream module updates. State is only pushed if changes are applied.
+
+```bash
+# Check for drift
+nori release upgrade my-bucket
+
+# Check and auto-correct drift
+nori release upgrade my-bucket --auto-approve
+```
+
+**Options:**
+- `-f, --values <file>` - Path to values.yaml file
+- `--set <key=value>` - Set values on the command line
+- `-t, --tag <version>` - New module tag/version to upgrade to
+- `--annotation <key=value>` - Add or update annotations
+- `--auto-approve` - Automatically approve apply
+- `--plan-only` - Only create plan, don't apply
+- `--parallelism <n>` - Number of parallel operations (default: 10)
+- `--reuse-values` - Reuse the last release's values and merge with new ones
+- `--reset-values` - Reset values to the defaults
+- `--rollback, --rof` - Rollback to previous state on failure
+- `--description <text>` - Description for this release version
+
 Check out [USAGE.md](./docs/USAGE.md) for additional documentation
 
 ## Global Flags

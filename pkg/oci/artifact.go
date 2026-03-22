@@ -221,8 +221,7 @@ func (c *Client) PushArtifactWithReadme(ctx context.Context, ref name.Reference,
 	// Create config
 	config := ModuleConfig{
 		Created:     time.Now().UTC(),
-		NoriVersion: "1.0.1",
-		ModuleType:  "terraform",
+		NoriVersion: "1.2.0",
 		Annotations: annotations,
 	}
 

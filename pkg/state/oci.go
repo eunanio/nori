@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/eunanio/nori/pkg/oci"
-	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -86,7 +85,7 @@ func (i *stateArtifactImage) Digest() (v1.Hash, error) {
 func (s *StateStore) PushState(ctx context.Context, ref string, state *ReleaseState) error {
 	s.logger.Info("pushing release state", "reference", ref)
 
-	parsedRef, err := name.ParseReference(ref)
+	parsedRef, err := s.client.ParseReference(ref)
 	if err != nil {
 		return fmt.Errorf("invalid reference: %w", err)
 	}
@@ -146,7 +145,7 @@ func (s *StateStore) PushState(ctx context.Context, ref string, state *ReleaseSt
 	annotations := map[string]string{
 		oci.AnnotationCreated:     time.Now().UTC().Format(time.RFC3339),
 		oci.AnnotationVersion:     state.Metadata.Version,
-		oci.AnnotationNoriVersion: "1.0.1",
+		oci.AnnotationNoriVersion: "1.2.0",
 		"io.nori.release.name":    state.Metadata.Name,
 		"io.nori.release.status":  string(state.Metadata.Status),
 		"io.nori.module.ref":      state.Metadata.ModuleRef,
@@ -194,7 +193,7 @@ func (s *StateStore) PushState(ctx context.Context, ref string, state *ReleaseSt
 func (s *StateStore) PullState(ctx context.Context, ref string) (*ReleaseState, error) {
 	s.logger.Info("pulling release state", "reference", ref)
 
-	parsedRef, err := name.ParseReference(ref)
+	parsedRef, err := s.client.ParseReference(ref)
 	if err != nil {
 		return nil, fmt.Errorf("invalid reference: %w", err)
 	}
@@ -272,7 +271,7 @@ func (s *StateStore) PullState(ctx context.Context, ref string) (*ReleaseState, 
 func (s *StateStore) ListReleases(ctx context.Context, stateRepository string) ([]string, error) {
 	s.logger.Debug("listing releases", "repository", stateRepository)
 
-	repo, err := name.NewRepository(stateRepository)
+	repo, err := s.client.NewRepository(stateRepository)
 	if err != nil {
 		return nil, fmt.Errorf("invalid repository: %w", err)
 	}
@@ -295,7 +294,7 @@ func (s *StateStore) GetReleaseHistory(ctx context.Context, stateRepository, rel
 	s.logger.Debug("getting release history", "repository", stateRepository, "release", releaseName)
 
 	// Use flat repository structure - all releases are tags on the base state repository
-	repo, err := name.NewRepository(stateRepository)
+	repo, err := s.client.NewRepository(stateRepository)
 	if err != nil {
 		return nil, fmt.Errorf("invalid repository: %w", err)
 	}
@@ -332,7 +331,7 @@ func (s *StateStore) GetReleaseHistory(ctx context.Context, stateRepository, rel
 		ref := fmt.Sprintf("%s:%s", stateRepository, tag)
 
 		// Try to get metadata from annotations (faster than pulling full state)
-		parsedRef, err := name.ParseReference(ref)
+		parsedRef, err := s.client.ParseReference(ref)
 		if err != nil {
 			continue
 		}
@@ -398,6 +397,21 @@ func (s *StateStore) GetLatestVersion(ctx context.Context, stateRepository, rele
 	return history.Versions[0].Version, nil
 }
 
+// GetLastSuccessfulVersion returns the most recent version with StatusDeployed.
+func (s *StateStore) GetLastSuccessfulVersion(ctx context.Context, stateRepository, releaseName string) (string, error) {
+	history, err := s.GetReleaseHistory(ctx, stateRepository, releaseName)
+	if err != nil {
+		return "", err
+	}
+
+	for _, v := range history.Versions {
+		if v.Status == StatusDeployed {
+			return v.Version, nil
+		}
+	}
+	return "", nil
+}
+
 // ReleaseExists checks if a release exists in the state repository.
 func (s *StateStore) ReleaseExists(ctx context.Context, stateRepository, releaseName string) (bool, error) {
 	_, err := s.GetLatestVersion(ctx, stateRepository, releaseName)
@@ -428,7 +442,7 @@ func (s *StateStore) DeleteRelease(ctx context.Context, stateRepository, release
 		ref := fmt.Sprintf("%s:%s", stateRepository, version.Tag)
 		s.logger.Debug("deleting release version", "reference", ref)
 
-		parsedRef, err := name.ParseReference(ref)
+		parsedRef, err := s.client.ParseReference(ref)
 		if err != nil {
 			deleteErrors = append(deleteErrors, fmt.Errorf("invalid reference %s: %w", ref, err))
 			continue

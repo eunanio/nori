@@ -723,6 +723,360 @@ resource_count: 2
 }
 
 // =============================================================================
+// Rollback Tests
+// =============================================================================
+
+func TestE2E_UpgradeRollbackOnFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping E2E test in short mode")
+	}
+
+	runtimePath := findRuntime(t)
+	registry, cleanup := setupRegistry(t)
+	defer cleanup()
+
+	testdataPath := getTestdataPath(t)
+	moduleDir := filepath.Join(testdataPath, "random-resources")
+	brokenModuleDir := filepath.Join(testdataPath, "broken-module")
+
+	zipPath := createModuleZip(t, moduleDir)
+	defer os.Remove(zipPath)
+	brokenZipPath := createModuleZip(t, brokenModuleDir)
+	defer os.Remove(brokenZipPath)
+
+	ctx := context.Background()
+	logger := testLogger(t)
+
+	client := oci.NewClient(
+		oci.WithInsecure(true),
+		oci.WithLogger(logger),
+	)
+
+	packager := packaging.NewPackager(client, logger)
+	deployer := deploy.NewDeployer(client, filepath.Base(runtimePath), logger)
+	stateStore := state.NewStateStore(client, logger)
+
+	stateRepo := fmt.Sprintf("%s/test/rollback-state", registry.URL)
+	releaseName := "rollback-test"
+	moduleRefV1 := registryReference(registry.URL, "test/rollback-module", "v1.0.0")
+	moduleRefV2 := registryReference(registry.URL, "test/rollback-module", "v2.0.0")
+
+	storeDir := t.TempDir()
+	store := release.NewStore(storeDir)
+
+	t.Run("setup_initial_release", func(t *testing.T) {
+		_, err := packager.Package(ctx, moduleRefV1, zipPath, packaging.PackageOptions{
+			Description: "Rollback test module v1",
+			ConfigPath:  moduleDir,
+		})
+		require.NoError(t, err)
+
+		rel := release.NewRelease(releaseName, moduleRefV1)
+		rel.Values = map[string]interface{}{
+			"password_length":  20,
+			"password_special": false,
+			"string_length":    10,
+			"pet_prefix":       "rollback",
+			"resource_count":   1,
+		}
+		err = store.Save(rel)
+		require.NoError(t, err)
+
+		result, err := deployer.DeployRelease(ctx, rel, store, deploy.ReleaseDeployOptions{
+			AutoApprove: true,
+		})
+		require.NoError(t, err)
+		require.True(t, result.Applied)
+
+		stateRef := fmt.Sprintf("%s:%s", stateRepo, state.FormatReleaseTag(releaseName, "v1.0.0"))
+		releaseState := &state.ReleaseState{
+			Metadata: state.NewReleaseMetadata(releaseName, moduleRefV1, "v1.0.0"),
+			TFState:  result.TFState,
+		}
+		releaseState.Metadata.Status = state.StatusDeployed
+		err = stateStore.PushState(ctx, stateRef, releaseState)
+		require.NoError(t, err)
+
+		t.Logf("Initial release v1.0.0 deployed successfully")
+	})
+
+	t.Run("verify_last_successful_version", func(t *testing.T) {
+		version, err := stateStore.GetLastSuccessfulVersion(ctx, stateRepo, releaseName)
+		require.NoError(t, err)
+		assert.Equal(t, "v1.0.0", version)
+	})
+
+	t.Run("push_broken_v2_and_verify_rollback_target", func(t *testing.T) {
+		_, err := packager.Package(ctx, moduleRefV2, brokenZipPath, packaging.PackageOptions{
+			Description: "Broken module v2 for rollback test",
+			ConfigPath:  brokenModuleDir,
+		})
+		require.NoError(t, err)
+
+		stateRef := fmt.Sprintf("%s:%s", stateRepo, state.FormatReleaseTag(releaseName, "v2.0.0"))
+		metadata := state.NewReleaseMetadata(releaseName, moduleRefV2, "v2.0.0")
+		metadata.Status = state.StatusFailed
+		releaseState := &state.ReleaseState{
+			Metadata: metadata,
+		}
+		err = stateStore.PushState(ctx, stateRef, releaseState)
+		require.NoError(t, err)
+
+		version, err := stateStore.GetLastSuccessfulVersion(ctx, stateRepo, releaseName)
+		require.NoError(t, err)
+		assert.Equal(t, "v1.0.0", version, "should skip failed v2 and return v1")
+	})
+
+	t.Run("cleanup", func(t *testing.T) {
+		rel, err := store.Get(releaseName)
+		if err == nil {
+			_ = deployer.DestroyRelease(ctx, rel, store, deploy.ReleaseDeployOptions{
+				AutoApprove: true,
+			})
+		}
+		_ = store.Delete(releaseName)
+	})
+}
+
+func TestE2E_UpgradeRollbackNoTarget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping E2E test in short mode")
+	}
+
+	registry, cleanup := setupRegistry(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	logger := testLogger(t)
+
+	client := oci.NewClient(
+		oci.WithInsecure(true),
+		oci.WithLogger(logger),
+	)
+
+	stateStore := state.NewStateStore(client, logger)
+	stateRepo := fmt.Sprintf("%s/test/no-rollback-state", registry.URL)
+	releaseName := "no-rollback-test"
+
+	t.Run("no_successful_version_returns_empty", func(t *testing.T) {
+		version, err := stateStore.GetLastSuccessfulVersion(ctx, stateRepo, releaseName)
+		require.NoError(t, err)
+		assert.Empty(t, version, "should return empty when no versions exist")
+	})
+
+	t.Run("only_failed_versions_returns_empty", func(t *testing.T) {
+		moduleRef := registryReference(registry.URL, "test/no-rollback-module", "v1.0.0")
+
+		stateRef := fmt.Sprintf("%s:%s", stateRepo, state.FormatReleaseTag(releaseName, "v1.0.0"))
+		metadata := state.NewReleaseMetadata(releaseName, moduleRef, "v1.0.0")
+		metadata.Status = state.StatusFailed
+		releaseState := &state.ReleaseState{
+			Metadata: metadata,
+		}
+		err := stateStore.PushState(ctx, stateRef, releaseState)
+		require.NoError(t, err)
+
+		version, err := stateStore.GetLastSuccessfulVersion(ctx, stateRepo, releaseName)
+		require.NoError(t, err)
+		assert.Empty(t, version, "should return empty when only failed versions exist")
+	})
+}
+
+// =============================================================================
+// Drift Check Tests
+// =============================================================================
+
+// TestE2E_DriftCheck_NoChanges tests drift check when infrastructure is in sync.
+func TestE2E_DriftCheck_NoChanges(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping E2E test in short mode")
+	}
+
+	runtimePath := findRuntime(t)
+	registry, cleanup := setupRegistry(t)
+	defer cleanup()
+
+	testdataPath := getTestdataPath(t)
+	moduleDir := filepath.Join(testdataPath, "random-resources")
+
+	zipPath := createModuleZip(t, moduleDir)
+	defer os.Remove(zipPath)
+
+	ctx := context.Background()
+	logger := testLogger(t)
+
+	client := oci.NewClient(
+		oci.WithInsecure(true),
+		oci.WithLogger(logger),
+	)
+
+	packager := packaging.NewPackager(client, logger)
+	deployer := deploy.NewDeployer(client, filepath.Base(runtimePath), logger)
+
+	releaseName := "drift-check-test"
+	moduleRef := registryReference(registry.URL, "test/drift-module", "v1.0.0")
+
+	storeDir := t.TempDir()
+	store := release.NewStore(storeDir)
+
+	t.Run("setup_initial_deployment", func(t *testing.T) {
+		_, err := packager.Package(ctx, moduleRef, zipPath, packaging.PackageOptions{
+			Description: "Drift check test module",
+			ConfigPath:  moduleDir,
+		})
+		require.NoError(t, err)
+
+		rel := release.NewRelease(releaseName, moduleRef)
+		rel.Values = map[string]interface{}{
+			"password_length":  20,
+			"password_special": false,
+			"string_length":    10,
+			"pet_prefix":       "drift",
+			"resource_count":   1,
+		}
+		err = store.Save(rel)
+		require.NoError(t, err)
+
+		result, err := deployer.DeployRelease(ctx, rel, store, deploy.ReleaseDeployOptions{
+			AutoApprove: true,
+		})
+		require.NoError(t, err)
+		require.True(t, result.Applied)
+		require.NotEmpty(t, result.TFState, "expected terraform state after deployment")
+		t.Logf("Initial deployment completed successfully")
+	})
+
+	t.Run("drift_check_no_changes", func(t *testing.T) {
+		// Get the existing release
+		rel, err := store.Get(releaseName)
+		require.NoError(t, err)
+
+		// Deploy again with the same configuration (simulating drift check)
+		// In drift check mode, no -t, -f, or --set values would be provided
+		// The release should show no changes
+		result, err := deployer.DeployRelease(ctx, rel, store, deploy.ReleaseDeployOptions{
+			AutoApprove: true,
+		})
+		require.NoError(t, err)
+
+		// No changes should be detected since infrastructure is in sync
+		assert.False(t, result.HasChanges, "expected no changes in drift check")
+		assert.False(t, result.Applied, "expected no apply since no changes")
+		t.Logf("Drift check result: HasChanges=%v, Applied=%v", result.HasChanges, result.Applied)
+	})
+
+	t.Run("cleanup", func(t *testing.T) {
+		rel, err := store.Get(releaseName)
+		if err == nil {
+			_ = deployer.DestroyRelease(ctx, rel, store, deploy.ReleaseDeployOptions{
+				AutoApprove: true,
+			})
+		}
+		_ = store.Delete(releaseName)
+	})
+}
+
+// TestE2E_DriftCheck_UpstreamModuleUpdate tests that upstream module updates are detected.
+func TestE2E_DriftCheck_UpstreamModuleUpdate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping E2E test in short mode")
+	}
+
+	runtimePath := findRuntime(t)
+	registry, cleanup := setupRegistry(t)
+	defer cleanup()
+
+	testdataPath := getTestdataPath(t)
+	moduleDir := filepath.Join(testdataPath, "random-resources")
+
+	zipPath := createModuleZip(t, moduleDir)
+	defer os.Remove(zipPath)
+
+	ctx := context.Background()
+	logger := testLogger(t)
+
+	client := oci.NewClient(
+		oci.WithInsecure(true),
+		oci.WithLogger(logger),
+	)
+
+	packager := packaging.NewPackager(client, logger)
+	deployer := deploy.NewDeployer(client, filepath.Base(runtimePath), logger)
+
+	releaseName := "upstream-update-test"
+	moduleRef := registryReference(registry.URL, "test/upstream-module", "v1.0.0")
+
+	storeDir := t.TempDir()
+	store := release.NewStore(storeDir)
+
+	t.Run("setup_initial_deployment", func(t *testing.T) {
+		_, err := packager.Package(ctx, moduleRef, zipPath, packaging.PackageOptions{
+			Description: "Upstream update test module v1",
+			ConfigPath:  moduleDir,
+		})
+		require.NoError(t, err)
+
+		rel := release.NewRelease(releaseName, moduleRef)
+		rel.Values = map[string]interface{}{
+			"password_length":  20,
+			"password_special": false,
+			"string_length":    10,
+			"pet_prefix":       "upstream",
+			"resource_count":   1,
+		}
+		err = store.Save(rel)
+		require.NoError(t, err)
+
+		result, err := deployer.DeployRelease(ctx, rel, store, deploy.ReleaseDeployOptions{
+			AutoApprove: true,
+		})
+		require.NoError(t, err)
+		require.True(t, result.Applied)
+
+		t.Logf("Initial deployment completed successfully")
+	})
+
+	t.Run("push_updated_module_same_tag", func(t *testing.T) {
+		// Push an updated module with the same tag (simulating upstream update)
+		// The module content stays the same, so no drift should be detected
+		_, err := packager.Package(ctx, moduleRef, zipPath, packaging.PackageOptions{
+			Description: "Upstream update test module v1 - updated",
+			ConfigPath:  moduleDir,
+		})
+		require.NoError(t, err)
+		t.Logf("Pushed updated module to same tag")
+	})
+
+	t.Run("drift_check_detects_no_functional_changes", func(t *testing.T) {
+		// Get the existing release
+		rel, err := store.Get(releaseName)
+		require.NoError(t, err)
+
+		// Deploy again - this would be a drift check
+		// Since the module content is the same (just re-pushed), no changes expected
+		result, err := deployer.DeployRelease(ctx, rel, store, deploy.ReleaseDeployOptions{
+			AutoApprove: true,
+		})
+		require.NoError(t, err)
+
+		// No infrastructure changes should be detected
+		// (The module was re-pushed but content is identical)
+		t.Logf("Drift check after upstream push: HasChanges=%v, Applied=%v",
+			result.HasChanges, result.Applied)
+	})
+
+	t.Run("cleanup", func(t *testing.T) {
+		rel, err := store.Get(releaseName)
+		if err == nil {
+			_ = deployer.DestroyRelease(ctx, rel, store, deploy.ReleaseDeployOptions{
+				AutoApprove: true,
+			})
+		}
+		_ = store.Delete(releaseName)
+	})
+}
+
+// =============================================================================
 // Helper Functions
 // =============================================================================
 

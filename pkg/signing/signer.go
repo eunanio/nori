@@ -80,6 +80,13 @@ func NewSigner(opts ...SignerOption) *Signer {
 	return s
 }
 
+func (s *Signer) nameOptions() []name.Option {
+	if s.insecure {
+		return []name.Option{name.Insecure}
+	}
+	return nil
+}
+
 // SimpleSigningPayload represents the payload that gets signed.
 // This follows the cosign simple signing format.
 type SimpleSigningPayload struct {
@@ -198,7 +205,7 @@ func (s *Signer) Verify(ctx context.Context, ref name.Reference, remoteOpts ...r
 
 	// Construct the signature tag
 	sigTag := digestToSignatureTag(digest)
-	sigRef, err := name.NewTag(ref.Context().String() + ":" + sigTag)
+	sigRef, err := name.NewTag(ref.Context().String()+":"+sigTag, s.nameOptions()...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create signature reference: %w", err)
 	}
@@ -310,7 +317,7 @@ func (s *Signer) VerifyWithPublicKey(ctx context.Context, ref name.Reference, pu
 
 	// Construct the signature tag
 	sigTag := digestToSignatureTag(digest)
-	sigRef, err := name.NewTag(ref.Context().String() + ":" + sigTag)
+	sigRef, err := name.NewTag(ref.Context().String()+":"+sigTag, s.nameOptions()...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create signature reference: %w", err)
 	}
@@ -397,7 +404,7 @@ func (s *Signer) HasSignature(ctx context.Context, ref name.Reference, remoteOpt
 
 	// Construct the signature tag
 	sigTag := digestToSignatureTag(digest)
-	sigRef, err := name.NewTag(ref.Context().String() + ":" + sigTag)
+	sigRef, err := name.NewTag(ref.Context().String()+":"+sigTag, s.nameOptions()...)
 	if err != nil {
 		return false, fmt.Errorf("failed to create signature reference: %w", err)
 	}
@@ -415,7 +422,7 @@ func (s *Signer) HasSignature(ctx context.Context, ref name.Reference, remoteOpt
 func (s *Signer) pushSignature(ctx context.Context, ref name.Reference, digest string, payload, signature []byte, remoteOpts ...remote.Option) (string, error) {
 	// Create the signature tag following cosign convention
 	sigTag := digestToSignatureTag(digest)
-	sigRef, err := name.NewTag(ref.Context().String() + ":" + sigTag)
+	sigRef, err := name.NewTag(ref.Context().String()+":"+sigTag, s.nameOptions()...)
 	if err != nil {
 		return "", fmt.Errorf("failed to create signature reference: %w", err)
 	}

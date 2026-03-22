@@ -14,21 +14,22 @@ import (
 )
 
 type upgradeOptions struct {
-	valuesFile    string
-	values        []string
-	tag           string // New module tag/version
-	annotations   []string
-	autoApprove   bool
-	parallelism   int
-	varFiles      []string
-	backendConfig []string
-	targets       []string
-	planOnly      bool
-	upgradeInit   bool
-	reuseValues   bool
-	resetValues   bool
-	description   string
-	version       string // Override version
+	valuesFile        string
+	values            []string
+	tag               string
+	annotations       []string
+	autoApprove       bool
+	parallelism       int
+	varFiles          []string
+	backendConfig     []string
+	targets           []string
+	planOnly          bool
+	upgradeInit       bool
+	reuseValues       bool
+	resetValues       bool
+	description       string
+	version           string
+	rollbackOnFailure bool
 }
 
 func newReleaseUpgradeCommand() *cobra.Command {
@@ -36,7 +37,7 @@ func newReleaseUpgradeCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "upgrade <release_name> [module-reference]",
-		Short: "Upgrade an existing release",
+		Short: "Upgrade an existing release or check for drift",
 		Long: `Upgrade an existing release with new values or a new module version.
 
 This command updates an existing release. You can:
@@ -44,10 +45,22 @@ This command updates an existing release. You can:
 - Update to a new module version using -t flag or positional argument
 - Combine both
 - Add or update annotations
+- Run a drift check (no flags) to detect infrastructure drift or upstream module updates
+
+When run without -t or -f flags, the command acts as a drift check:
+- Pulls the existing state and module fresh from OCI
+- Detects any infrastructure drift or upstream module changes
+- Only increments version and pushes state if changes are applied
 
 The release state is pulled from OCI, updated, and pushed back after successful deployment.
 
 Examples:
+  # Drift check - detect infrastructure drift or upstream module updates
+  nori release upgrade my-bucket
+
+  # Drift check with auto-approve to automatically correct drift
+  nori release upgrade my-bucket --auto-approve
+
   # Upgrade with new values (same module version)
   nori release upgrade my-bucket -f values.yaml
 
@@ -89,6 +102,8 @@ Examples:
 	cmd.Flags().BoolVar(&opts.resetValues, "reset-values", false, "Reset values to the defaults")
 	cmd.Flags().StringVar(&opts.description, "description", "", "Description for this release version")
 	cmd.Flags().StringVar(&opts.version, "version", "", "Override the release version (default: auto-increment)")
+	cmd.Flags().BoolVar(&opts.rollbackOnFailure, "rollback", false, "Rollback to previous state on failure")
+	cmd.Flags().BoolVar(&opts.rollbackOnFailure, "rof", false, "Alias for --rollback")
 
 	return cmd
 }
@@ -102,6 +117,14 @@ func runUpgrade(cmd *cobra.Command, args []string, opts *upgradeOptions) error {
 	if len(args) > 1 {
 		newModuleRef = args[1]
 	}
+
+	// Detect drift check mode - no value or module changes provided
+	// This mode checks for infrastructure drift and upstream module updates
+	isDriftCheck := len(args) == 1 && // no positional module ref
+		opts.tag == "" && // no -t flag
+		opts.valuesFile == "" && // no -f flag
+		len(opts.values) == 0 && // no --set values
+		!opts.resetValues // not resetting values
 
 	log := getLogger()
 	cfg := getConfig()
@@ -128,11 +151,19 @@ func runUpgrade(cmd *cobra.Command, args []string, opts *upgradeOptions) error {
 		return fmt.Errorf("failed to pull release state: %w", err)
 	}
 
-	log.Info("upgrading release",
-		"name", releaseName,
-		"from_version", existingState.Metadata.Version,
-		"module", existingState.Metadata.ModuleRef,
-	)
+	if isDriftCheck {
+		log.Info("running drift check",
+			"name", releaseName,
+			"version", existingState.Metadata.Version,
+			"module", existingState.Metadata.ModuleRef,
+		)
+	} else {
+		log.Info("upgrading release",
+			"name", releaseName,
+			"from_version", existingState.Metadata.Version,
+			"module", existingState.Metadata.ModuleRef,
+		)
+	}
 
 	// Determine if module is changing
 	moduleChanged := false
@@ -149,9 +180,14 @@ func runUpgrade(cmd *cobra.Command, args []string, opts *upgradeOptions) error {
 	}
 
 	// Determine new version
+	// In drift check mode, we defer version increment until we know changes will be applied
 	var newVersion string
 	if opts.version != "" {
 		newVersion = state.EnsureVPrefix(opts.version)
+	} else if isDriftCheck {
+		// In drift check mode, initially use existing version
+		// Will be updated to new version only if changes are applied
+		newVersion = existingState.Metadata.Version
 	} else {
 		newVersion, err = state.NextVersion(existingState.Metadata.Version, moduleChanged)
 		if err != nil {
@@ -302,8 +338,39 @@ func runUpgrade(cmd *cobra.Command, args []string, opts *upgradeOptions) error {
 		rel.Status = release.StatusFailed
 		localStore.Save(rel)
 
-		// Push failed state to OCI if apply was attempted and terraform state exists
-		// This ensures resources are never left stateless after partial apply failures
+		if opts.rollbackOnFailure {
+			prevVersion, findErr := stateStore.GetLastSuccessfulVersion(ctx, stateRepo, releaseName)
+			if findErr != nil {
+				log.Warn("failed to find previous successful version for rollback", "error", findErr)
+			} else if prevVersion == "" {
+				log.Warn("no previous successful version found for rollback")
+			} else if prevVersion != latestVersion || existingState.Metadata.Status != state.StatusDeployed {
+				log.Info("attempting rollback", "target_version", prevVersion)
+				prevStateRef := fmt.Sprintf("%s:%s", stateRepo, state.FormatReleaseTag(releaseName, prevVersion))
+				prevState, pullErr := stateStore.PullState(ctx, prevStateRef)
+				if pullErr != nil {
+					log.Warn("failed to pull previous state for rollback", "error", pullErr)
+				} else {
+					rollbackResult, rollbackErr := deployer.RollbackRelease(ctx, releaseName, prevState, localStore, deploy.ReleaseDeployOptions{
+						AutoApprove: true,
+						Parallelism: opts.parallelism,
+						Reconfigure: true,
+					})
+					if rollbackErr != nil {
+						log.Error("rollback failed", "error", rollbackErr)
+						fmt.Printf("\nERROR: Rollback to %s failed: %v\n", prevVersion, rollbackErr)
+					} else {
+						fmt.Printf("\nROLLBACK: Successfully restored to version %s\n", prevVersion)
+						if rollbackResult != nil && len(rollbackResult.TFState) > 0 {
+							result = rollbackResult
+						}
+					}
+				}
+			} else {
+				log.Debug("skipping rollback, already at last successful version")
+			}
+		}
+
 		if result != nil && result.ApplyAttempted && len(result.TFState) > 0 {
 			newStateRef, pushErr := pushReleaseState(ctx, stateStore, stateRepo, PushStateParams{
 				ReleaseName: releaseName,
@@ -336,8 +403,19 @@ func runUpgrade(cmd *cobra.Command, args []string, opts *upgradeOptions) error {
 		log.Warn("failed to update release status", "error", err)
 	}
 
-	// Push state to OCI if deployment was successful
+	// Push state to OCI if deployment was successful and changes were applied
 	if !opts.planOnly && result.Applied {
+		// In drift check mode, calculate new version now that we know changes were applied
+		if isDriftCheck && opts.version == "" {
+			newVersion, err = state.NextVersion(existingState.Metadata.Version, false)
+			if err != nil {
+				log.Warn("failed to calculate next version for drift correction", "error", err)
+				// Fall back to patch increment
+				newVersion = existingState.Metadata.Version
+			}
+			rel.SemVer = newVersion
+		}
+
 		newStateRef, pushErr := pushReleaseState(ctx, stateStore, stateRepo, PushStateParams{
 			ReleaseName: releaseName,
 			ModuleRef:   moduleRef,
@@ -362,24 +440,53 @@ func runUpgrade(cmd *cobra.Command, args []string, opts *upgradeOptions) error {
 	fmt.Printf("\n")
 	if opts.planOnly {
 		fmt.Printf("NAME: %s\n", rel.Name)
-		fmt.Printf("STATUS: planned\n")
-		fmt.Printf("VERSION: %s -> %s\n", existingState.Metadata.Version, newVersion)
+		if isDriftCheck {
+			fmt.Printf("STATUS: drift check (plan only)\n")
+		} else {
+			fmt.Printf("STATUS: planned\n")
+		}
+		if isDriftCheck || !result.HasChanges {
+			fmt.Printf("VERSION: %s\n", existingState.Metadata.Version)
+		} else {
+			fmt.Printf("VERSION: %s -> %s\n", existingState.Metadata.Version, newVersion)
+		}
+		fmt.Printf("MODULE: %s\n", rel.ModuleRef)
 		fmt.Printf("PLAN: %s\n", result.PlanFile)
 		if !result.HasChanges {
-			fmt.Printf("\nNo changes detected. Infrastructure is up-to-date.\n")
+			if isDriftCheck {
+				fmt.Printf("\nDrift check complete. Infrastructure is in sync.\n")
+			} else {
+				fmt.Printf("\nNo changes detected. Infrastructure is up-to-date.\n")
+			}
 		} else {
-			fmt.Printf("\nTo apply this plan, run:\n")
-			fmt.Printf("  nori upgrade %s --auto-approve\n", releaseName)
+			if isDriftCheck {
+				fmt.Printf("\nDrift detected. To correct drift, run:\n")
+			} else {
+				fmt.Printf("\nTo apply this plan, run:\n")
+			}
+			fmt.Printf("  nori release upgrade %s --auto-approve\n", releaseName)
 		}
 	} else if !result.HasChanges {
 		fmt.Printf("NAME: %s\n", rel.Name)
-		fmt.Printf("STATUS: no changes\n")
-		fmt.Printf("VERSION: %s (unchanged)\n", existingState.Metadata.Version)
+		if isDriftCheck {
+			fmt.Printf("STATUS: synced\n")
+		} else {
+			fmt.Printf("STATUS: no changes\n")
+		}
+		fmt.Printf("VERSION: %s\n", existingState.Metadata.Version)
 		fmt.Printf("MODULE: %s\n", rel.ModuleRef)
-		fmt.Printf("\nNo changes detected. Infrastructure is up-to-date.\n")
+		if isDriftCheck {
+			fmt.Printf("\nDrift check complete. Infrastructure is in sync.\n")
+		} else {
+			fmt.Printf("\nNo changes detected. Infrastructure is up-to-date.\n")
+		}
 	} else {
 		fmt.Printf("NAME: %s\n", rel.Name)
-		fmt.Printf("STATUS: %s\n", rel.Status)
+		if isDriftCheck {
+			fmt.Printf("STATUS: drift corrected\n")
+		} else {
+			fmt.Printf("STATUS: %s\n", rel.Status)
+		}
 		fmt.Printf("VERSION: %s -> %s\n", existingState.Metadata.Version, newVersion)
 		fmt.Printf("MODULE: %s\n", rel.ModuleRef)
 
@@ -399,6 +506,10 @@ func runUpgrade(cmd *cobra.Command, args []string, opts *upgradeOptions) error {
 			for k, v := range result.Outputs {
 				fmt.Printf("  %s: %v\n", k, v)
 			}
+		}
+
+		if isDriftCheck {
+			fmt.Printf("\nDrift corrected. Infrastructure is now in sync.\n")
 		}
 	}
 

@@ -3,6 +3,7 @@ package oci
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -62,9 +63,39 @@ func NewClient(opts ...ClientOption) *Client {
 	return c
 }
 
-// ParseReference parses an OCI reference string.
-func ParseReference(ref string) (name.Reference, error) {
-	return name.ParseReference(ref)
+// ParseReference parses an OCI reference string (standalone, without insecure support).
+func ParseReference(ref string, opts ...name.Option) (name.Reference, error) {
+	return name.ParseReference(ref, opts...)
+}
+
+// NameOptions returns the name options for reference parsing.
+// When the client is configured as insecure, this includes name.Insecure
+// so that go-containerregistry uses HTTP instead of defaulting to HTTPS.
+func (c *Client) NameOptions() []name.Option {
+	if c.insecure {
+		return []name.Option{name.Insecure}
+	}
+	return nil
+}
+
+// ParseReference parses an OCI reference string, applying insecure options when configured.
+func (c *Client) ParseReference(ref string) (name.Reference, error) {
+	return name.ParseReference(ref, c.NameOptions()...)
+}
+
+// NewTag creates a new tag reference, applying insecure options when configured.
+func (c *Client) NewTag(tag string) (name.Tag, error) {
+	return name.NewTag(tag, c.NameOptions()...)
+}
+
+// NewDigest creates a new digest reference, applying insecure options when configured.
+func (c *Client) NewDigest(digest string) (name.Digest, error) {
+	return name.NewDigest(digest, c.NameOptions()...)
+}
+
+// NewRepository creates a new repository reference, applying insecure options when configured.
+func (c *Client) NewRepository(repo string) (name.Repository, error) {
+	return name.NewRepository(repo, c.NameOptions()...)
 }
 
 // RemoteOptions returns the remote options for registry operations.
@@ -91,10 +122,10 @@ func (c *Client) RemoteOptions(ctx context.Context, registry string) ([]remote.O
 	return opts, nil
 }
 
-// insecureTransport returns an HTTP transport that allows insecure connections.
+// insecureTransport returns an HTTP transport that skips TLS certificate verification.
 func insecureTransport() http.RoundTripper {
 	return &http.Transport{
-		TLSClientConfig: nil, // This allows HTTP connections
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 }
 
@@ -125,7 +156,7 @@ func DigestFromRef(ref name.Reference) string {
 }
 
 // ValidateReference validates an OCI reference string.
-func ValidateReference(ref string) error {
+func ValidateReference(ref string, opts ...name.Option) error {
 	// Check basic format
 	if ref == "" {
 		return fmt.Errorf("reference cannot be empty")
@@ -137,7 +168,7 @@ func ValidateReference(ref string) error {
 	}
 
 	// Parse the reference
-	parsed, err := name.ParseReference(ref)
+	parsed, err := name.ParseReference(ref, opts...)
 	if err != nil {
 		return fmt.Errorf("invalid reference: %w", err)
 	}
@@ -158,7 +189,7 @@ func ValidateReference(ref string) error {
 }
 
 // ReferenceWithDigest creates a new reference with the given digest.
-func ReferenceWithDigest(ref name.Reference, digest string) (name.Reference, error) {
+func ReferenceWithDigest(ref name.Reference, digest string, opts ...name.Option) (name.Reference, error) {
 	repo := ref.Context()
-	return name.NewDigest(repo.String() + "@" + digest)
+	return name.NewDigest(repo.String()+"@"+digest, opts...)
 }

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/eunanio/nori/pkg/state"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/spf13/cobra"
 )
@@ -150,7 +149,7 @@ func runReleaseList(cmd *cobra.Command, opts *releaseListOptions) error {
 // listReleasesFromOCI lists all releases from the OCI state repository.
 func listReleasesFromOCI(ctx context.Context, stateRepo string) ([]ReleaseInfo, error) {
 	// Parse the repository
-	repo, err := name.NewRepository(stateRepo)
+	repo, err := getClient().NewRepository(stateRepo)
 	if err != nil {
 		return nil, fmt.Errorf("invalid repository: %w", err)
 	}
@@ -194,7 +193,7 @@ func listReleasesFromOCI(ctx context.Context, stateRepo string) ([]ReleaseInfo, 
 		ref := fmt.Sprintf("%s:%s", stateRepo, state.FormatReleaseTag(releaseName, latestVersion))
 
 		// Try to get metadata from the manifest annotations
-		parsedRef, err := name.ParseReference(ref)
+		parsedRef, err := getClient().ParseReference(ref)
 		if err != nil {
 			continue
 		}

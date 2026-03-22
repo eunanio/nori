@@ -13,7 +13,6 @@ import (
 
 	"github.com/eunanio/nori/internal/util"
 	"github.com/eunanio/nori/pkg/oci"
-	"github.com/google/go-containerregistry/pkg/name"
 )
 
 // Packager handles module packaging operations.
@@ -165,7 +164,7 @@ func (p *Packager) Package(ctx context.Context, reference, archivePath string, o
 	p.logger.Info("packaging module", "reference", reference, "archive", archivePath)
 
 	// Parse reference
-	ref, err := name.ParseReference(reference)
+	ref, err := p.client.ParseReference(reference)
 	if err != nil {
 		return nil, fmt.Errorf("invalid reference: %w", err)
 	}
