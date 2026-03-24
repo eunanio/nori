@@ -7,7 +7,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/eunanio/nori/pkg/auth"
+	nori "github.com/eunanio/nori/lib"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -59,10 +59,7 @@ Examples:
 func runLogin(cmd *cobra.Command, args []string, opts *loginOptions) error {
 	registry := args[0]
 
-	log := getLogger()
-	log.Info("logging in to registry", "registry", registry)
-
-	// Get username
+	// Resolve username (interactive prompt is CLI-only)
 	username := opts.username
 	if username == "" {
 		fmt.Print("Username: ")
@@ -74,11 +71,10 @@ func runLogin(cmd *cobra.Command, args []string, opts *loginOptions) error {
 		username = strings.TrimSpace(input)
 	}
 
-	// Get password
+	// Resolve password (interactive prompt is CLI-only)
 	password := opts.password
 	if password == "" {
 		if opts.passwordStdin {
-			// Read from stdin
 			reader := bufio.NewReader(os.Stdin)
 			input, err := reader.ReadString('\n')
 			if err != nil {
@@ -86,31 +82,23 @@ func runLogin(cmd *cobra.Command, args []string, opts *loginOptions) error {
 			}
 			password = strings.TrimSpace(input)
 		} else {
-			// Read interactively
 			fmt.Print("Password: ")
 			passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
 			if err != nil {
 				return fmt.Errorf("failed to read password: %w", err)
 			}
-			fmt.Println() // newline after password input
+			fmt.Println()
 			password = string(passwordBytes)
 		}
 	}
 
-	if username == "" || password == "" {
-		return fmt.Errorf("username and password are required")
-	}
-
-	// Store credentials
-	credStore := getCredStore()
-	if err := credStore.StoreCredentials(registry, &auth.Credentials{
+	if err := getLibClient().Login(cmd.Context(), registry, nori.Credentials{
 		Username: username,
 		Password: password,
 	}); err != nil {
-		return fmt.Errorf("failed to store credentials: %w", err)
+		return err
 	}
 
 	fmt.Printf("✓ Logged in to %s\n", registry)
 	return nil
 }
-

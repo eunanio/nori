@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,8 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/eunanio/nori/pkg/state"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
+	nori "github.com/eunanio/nori/lib"
 	"github.com/spf13/cobra"
 )
 
@@ -93,44 +91,12 @@ Examples:
 	return cmd
 }
 
-// ReleaseInfo represents release information for display.
-type ReleaseInfo struct {
-	Name        string            `json:"name"`
-	Version     string            `json:"version"`
-	ModuleRef   string            `json:"module_ref"`
-	Status      string            `json:"status"`
-	UpdatedAt   time.Time         `json:"updated_at"`
-	Annotations map[string]string `json:"annotations,omitempty"`
-}
-
 func runReleaseList(cmd *cobra.Command, opts *releaseListOptions) error {
-	ctx := cmd.Context()
-	log := getLogger()
-	cfg := getConfig()
-
-	// Get state repository
-	stateRepo, err := cfg.GetStateRepository()
+	releases, err := getLibClient().ListReleases(cmd.Context(), nori.ListReleasesOptions{
+		All: opts.all,
+	})
 	if err != nil {
-		return fmt.Errorf("state repository not configured: %w\nRun: nori config set state_repository <oci-repo>", err)
-	}
-
-	log.Debug("listing releases from OCI", "repository", stateRepo)
-
-	// List all repositories under the state repository
-	releases, err := listReleasesFromOCI(ctx, stateRepo)
-	if err != nil {
-		return fmt.Errorf("failed to list releases: %w", err)
-	}
-
-	// Filter if not showing all
-	if !opts.all {
-		var filtered []ReleaseInfo
-		for _, r := range releases {
-			if r.Status != string(state.StatusFailed) {
-				filtered = append(filtered, r)
-			}
-		}
-		releases = filtered
+		return err
 	}
 
 	if len(releases) == 0 {
@@ -146,115 +112,7 @@ func runReleaseList(cmd *cobra.Command, opts *releaseListOptions) error {
 	}
 }
 
-// listReleasesFromOCI lists all releases from the OCI state repository.
-func listReleasesFromOCI(ctx context.Context, stateRepo string) ([]ReleaseInfo, error) {
-	// Parse the repository
-	repo, err := getClient().NewRepository(stateRepo)
-	if err != nil {
-		return nil, fmt.Errorf("invalid repository: %w", err)
-	}
-
-	// Get remote options with authentication
-	opts, err := getClient().RemoteOptions(ctx, repo.RegistryStr())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get remote options: %w", err)
-	}
-
-	// List tags in the repository
-	// Note: This lists tags from the base repo, which contain release-version tags
-	tags, err := remote.List(repo, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list tags: %w", err)
-	}
-
-	// Group tags by release name
-	releaseVersions := make(map[string][]string)
-	for _, tag := range tags {
-		// Tags are in format: <release-name>-<version>
-		parts := strings.Split(tag, "-v")
-		if len(parts) >= 2 {
-			releaseName := parts[0]
-			version := "v" + parts[len(parts)-1]
-			releaseVersions[releaseName] = append(releaseVersions[releaseName], version)
-		}
-	}
-
-	var releases []ReleaseInfo
-	stateStore := state.NewStateStore(getClient(), getLogger())
-
-	for releaseName, versions := range releaseVersions {
-		// Get the latest version
-		latestVersion, err := state.FindLatestVersion(versions)
-		if err != nil {
-			continue
-		}
-
-		// Build reference for the latest version
-		ref := fmt.Sprintf("%s:%s", stateRepo, state.FormatReleaseTag(releaseName, latestVersion))
-
-		// Try to get metadata from the manifest annotations
-		parsedRef, err := getClient().ParseReference(ref)
-		if err != nil {
-			continue
-		}
-
-		desc, err := remote.Get(parsedRef, opts...)
-		if err != nil {
-			continue
-		}
-
-		img, err := desc.Image()
-		if err != nil {
-			continue
-		}
-
-		manifest, err := img.Manifest()
-		if err != nil {
-			continue
-		}
-
-		info := ReleaseInfo{
-			Name:    releaseName,
-			Version: latestVersion,
-		}
-
-		if manifest.Annotations != nil {
-			if moduleRef, ok := manifest.Annotations["io.nori.module.ref"]; ok {
-				info.ModuleRef = moduleRef
-			}
-			if status, ok := manifest.Annotations["io.nori.release.status"]; ok {
-				info.Status = status
-			}
-			if created, ok := manifest.Annotations["org.opencontainers.image.created"]; ok {
-				info.UpdatedAt, _ = time.Parse(time.RFC3339, created)
-			}
-		}
-
-		// Get user annotations
-		info.Annotations = make(map[string]string)
-		for k, v := range manifest.Annotations {
-			if !isSystemAnnotation(k) {
-				info.Annotations[k] = v
-			}
-		}
-
-		// If we still need data, pull the full state
-		if info.ModuleRef == "" || info.Status == "" {
-			fullState, err := stateStore.PullState(ctx, ref)
-			if err == nil && fullState.Metadata != nil {
-				info.ModuleRef = fullState.Metadata.ModuleRef
-				info.Status = string(fullState.Metadata.Status)
-				info.UpdatedAt = fullState.Metadata.UpdatedAt
-			}
-		}
-
-		releases = append(releases, info)
-	}
-
-	return releases, nil
-}
-
-func outputReleasesInfoTable(releases []ReleaseInfo) error {
+func outputReleasesInfoTable(releases []nori.ReleaseInfo) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tVERSION\tMODULE\tSTATUS\tUPDATED")
 
@@ -272,7 +130,7 @@ func outputReleasesInfoTable(releases []ReleaseInfo) error {
 	return w.Flush()
 }
 
-func outputReleasesInfoJSON(releases []ReleaseInfo) error {
+func outputReleasesInfoJSON(releases []nori.ReleaseInfo) error {
 	data, err := json.MarshalIndent(releases, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal releases: %w", err)
@@ -321,24 +179,6 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-// isSystemAnnotation checks if an annotation key is a system annotation.
-func isSystemAnnotation(key string) bool {
-	systemPrefixes := []string{
-		"org.opencontainers.",
-		"io.nori.release.",
-		"io.nori.module.",
-		"io.nori.version",
-	}
-
-	for _, prefix := range systemPrefixes {
-		if strings.HasPrefix(key, prefix) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // Release History subcommand
 type releaseHistoryOptions struct {
 	output string
@@ -375,29 +215,16 @@ Examples:
 }
 
 func runReleaseHistory(cmd *cobra.Command, releaseName string, opts *releaseHistoryOptions) error {
-	ctx := cmd.Context()
-	log := getLogger()
-	cfg := getConfig()
-
-	stateRepo, err := cfg.GetStateRepository()
+	history, err := getLibClient().ReleaseHistory(cmd.Context(), releaseName, nori.HistoryOptions{
+		Limit: opts.limit,
+	})
 	if err != nil {
-		return fmt.Errorf("state repository not configured: %w", err)
-	}
-
-	stateStore := state.NewStateStore(getClient(), log)
-	history, err := stateStore.GetReleaseHistory(ctx, stateRepo, releaseName)
-	if err != nil {
-		return fmt.Errorf("failed to get release history: %w", err)
+		return err
 	}
 
 	if len(history.Versions) == 0 {
 		fmt.Printf("No history found for release %q\n", releaseName)
 		return nil
-	}
-
-	versions := history.Versions
-	if opts.limit > 0 && len(versions) > opts.limit {
-		versions = versions[:opts.limit]
 	}
 
 	switch opts.output {
@@ -412,7 +239,7 @@ func runReleaseHistory(cmd *cobra.Command, releaseName string, opts *releaseHist
 		fmt.Fprintf(w, "RELEASE: %s\n\n", releaseName)
 		fmt.Fprintln(w, "VERSION\tSTATUS\tMODULE\tCREATED")
 
-		for _, v := range versions {
+		for _, v := range history.Versions {
 			created := formatTimeAgo(v.CreatedAt)
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 				v.Version,
@@ -464,38 +291,15 @@ Examples:
 }
 
 func runReleaseInspect(cmd *cobra.Command, releaseName string, opts *releaseInspectOptions) error {
-	ctx := cmd.Context()
-	log := getLogger()
-	cfg := getConfig()
-
-	stateRepo, err := cfg.GetStateRepository()
+	releaseState, err := getLibClient().InspectRelease(cmd.Context(), releaseName, nori.InspectReleaseOptions{
+		Version: opts.version,
+	})
 	if err != nil {
-		return fmt.Errorf("state repository not configured: %w", err)
-	}
-
-	stateStore := state.NewStateStore(getClient(), log)
-
-	// Get version to inspect
-	version := opts.version
-	if version == "" {
-		version, err = stateStore.GetLatestVersion(ctx, stateRepo, releaseName)
-		if err != nil {
-			return fmt.Errorf("failed to get latest version: %w", err)
-		}
-	}
-
-	// Build reference (flat format: repo:releaseName-version)
-	ref := fmt.Sprintf("%s:%s", stateRepo, state.FormatReleaseTag(releaseName, version))
-
-	// Pull state
-	releaseState, err := stateStore.PullState(ctx, ref)
-	if err != nil {
-		return fmt.Errorf("failed to pull release state: %w", err)
+		return err
 	}
 
 	switch opts.output {
 	case "json":
-		// Create a structured output
 		output := map[string]interface{}{
 			"metadata": releaseState.Metadata,
 			"values":   string(releaseState.Values),
@@ -506,7 +310,6 @@ func runReleaseInspect(cmd *cobra.Command, releaseName string, opts *releaseInsp
 		}
 		fmt.Println(string(data))
 	default:
-		// YAML-like output
 		fmt.Printf("Name: %s\n", releaseState.Metadata.Name)
 		fmt.Printf("Version: %s\n", releaseState.Metadata.Version)
 		fmt.Printf("Module: %s\n", releaseState.Metadata.ModuleRef)
@@ -527,7 +330,6 @@ func runReleaseInspect(cmd *cobra.Command, releaseName string, opts *releaseInsp
 
 		if len(releaseState.Values) > 0 {
 			fmt.Printf("\nValues:\n")
-			// Indent the values
 			lines := strings.Split(string(releaseState.Values), "\n")
 			for _, line := range lines {
 				if line != "" {

@@ -4,8 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/eunanio/nori/pkg/deploy"
-	"github.com/eunanio/nori/pkg/release"
+	nori "github.com/eunanio/nori/lib"
 	"github.com/spf13/cobra"
 )
 
@@ -50,63 +49,49 @@ Examples:
 }
 
 func runStatus(cmd *cobra.Command, args []string, opts *statusOptions) error {
-	ctx := cmd.Context()
 	releaseName := args[0]
 
-	log := getLogger()
-
-	store := release.NewStore("")
-
-	rel, err := store.Get(releaseName)
+	result, err := getLibClient().ReleaseStatus(cmd.Context(), releaseName, nori.StatusOptions{
+		ShowOutputs: opts.showOutputs,
+	})
 	if err != nil {
-		return fmt.Errorf("release %q not found: %w", releaseName, err)
-	}
-
-	// Optionally fetch OpenTofu outputs
-	var outputs map[string]interface{}
-	if opts.showOutputs {
-		deployer := deploy.NewDeployer(getClient(), "tofu", log)
-		outputs, err = deployer.GetReleaseOutputs(ctx, store, releaseName)
-		if err != nil {
-			log.Warn("failed to get outputs", "error", err)
-		}
+		return err
 	}
 
 	switch opts.output {
 	case "json":
-		return outputStatusJSON(rel, outputs)
+		return outputStatusJSON(result)
 	default:
-		return outputStatusText(rel, outputs)
+		return outputStatusText(result)
 	}
 }
 
-func outputStatusText(rel *release.Release, outputs map[string]interface{}) error {
-	fmt.Printf("NAME: %s\n", rel.Name)
-	fmt.Printf("MODULE: %s\n", rel.ModuleRef)
-	fmt.Printf("REVISION: %d\n", rel.Version)
-	fmt.Printf("STATUS: %s\n", rel.Status)
-	fmt.Printf("CREATED: %s\n", rel.CreatedAt.Format("2006-01-02 15:04:05"))
-	fmt.Printf("UPDATED: %s\n", rel.UpdatedAt.Format("2006-01-02 15:04:05"))
+func outputStatusText(r *nori.ReleaseStatusResult) error {
+	fmt.Printf("NAME: %s\n", r.Name)
+	fmt.Printf("MODULE: %s\n", r.ModuleRef)
+	fmt.Printf("REVISION: %d\n", r.Revision)
+	fmt.Printf("STATUS: %s\n", r.Status)
+	fmt.Printf("CREATED: %s\n", r.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("UPDATED: %s\n", r.UpdatedAt.Format("2006-01-02 15:04:05"))
 
-	if rel.ValuesFile != "" {
-		fmt.Printf("VALUES FILE: %s\n", rel.ValuesFile)
+	if r.ValuesFile != "" {
+		fmt.Printf("VALUES FILE: %s\n", r.ValuesFile)
 	}
 
-	if rel.BackendType != "" && rel.BackendType != "local" {
-		fmt.Printf("BACKEND: %s\n", rel.BackendType)
+	if r.BackendType != "" && r.BackendType != "local" {
+		fmt.Printf("BACKEND: %s\n", r.BackendType)
 	}
 
-	if len(rel.Values) > 0 {
+	if len(r.Values) > 0 {
 		fmt.Printf("\nVALUES:\n")
-		for k, v := range rel.Values {
+		for k, v := range r.Values {
 			fmt.Printf("  %s: %v\n", k, v)
 		}
 	}
 
-	if len(outputs) > 0 {
+	if len(r.Outputs) > 0 {
 		fmt.Printf("\nOUTPUTS:\n")
-		for k, v := range outputs {
-			// Handle Terraform output format
+		for k, v := range r.Outputs {
 			if m, ok := v.(map[string]interface{}); ok {
 				if val, exists := m["value"]; exists {
 					fmt.Printf("  %s: %v\n", k, val)
@@ -120,36 +105,8 @@ func outputStatusText(rel *release.Release, outputs map[string]interface{}) erro
 	return nil
 }
 
-type statusOutput struct {
-	Name          string                 `json:"name"`
-	ModuleRef     string                 `json:"module_ref"`
-	Version       int                    `json:"revision"`
-	Status        release.Status         `json:"status"`
-	CreatedAt     string                 `json:"created_at"`
-	UpdatedAt     string                 `json:"updated_at"`
-	ValuesFile    string                 `json:"values_file,omitempty"`
-	BackendType   string                 `json:"backend_type,omitempty"`
-	BackendConfig map[string]string      `json:"backend_config,omitempty"`
-	Values        map[string]interface{} `json:"values,omitempty"`
-	Outputs       map[string]interface{} `json:"outputs,omitempty"`
-}
-
-func outputStatusJSON(rel *release.Release, outputs map[string]interface{}) error {
-	out := statusOutput{
-		Name:          rel.Name,
-		ModuleRef:     rel.ModuleRef,
-		Version:       rel.Version,
-		Status:        rel.Status,
-		CreatedAt:     rel.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:     rel.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		ValuesFile:    rel.ValuesFile,
-		BackendType:   rel.BackendType,
-		BackendConfig: rel.BackendConfig,
-		Values:        rel.Values,
-		Outputs:       outputs,
-	}
-
-	data, err := json.MarshalIndent(out, "", "  ")
+func outputStatusJSON(r *nori.ReleaseStatusResult) error {
+	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal status: %w", err)
 	}

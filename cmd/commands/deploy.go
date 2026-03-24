@@ -3,7 +3,7 @@ package commands
 import (
 	"fmt"
 
-	"github.com/eunanio/nori/pkg/deploy"
+	nori "github.com/eunanio/nori/lib"
 	"github.com/spf13/cobra"
 )
 
@@ -74,38 +74,19 @@ Examples:
 }
 
 func runDeploy(cmd *cobra.Command, args []string, opts *deployOptions) error {
-	ctx := cmd.Context()
 	reference := args[0]
 
-	log := getLogger()
-
-	log.Info("deploying module", "reference", reference)
-
-	// Parse inline values
-	inlineValues := make(map[string]interface{})
-	for _, v := range opts.values {
-		key, value, err := parseValue(v)
-		if err != nil {
-			return err
-		}
-		inlineValues[key] = value
+	inlineValues, err := nori.ParseSetValues(opts.values)
+	if err != nil {
+		return err
 	}
 
-	// Parse backend config
-	backendConfig := make(map[string]string)
-	for _, bc := range opts.backendConfig {
-		key, value, err := parseAnnotation(bc)
-		if err != nil {
-			return fmt.Errorf("invalid backend config: %w", err)
-		}
-		backendConfig[key] = value
+	backendConfig, err := nori.ParseAnnotations(opts.backendConfig)
+	if err != nil {
+		return fmt.Errorf("invalid backend config: %w", err)
 	}
 
-	// Create deployer
-	deployer := deploy.NewDeployer(getClient(), "tofu", log)
-
-	// Deploy
-	result, err := deployer.Deploy(ctx, reference, deploy.DeployOptions{
+	result, err := getLibClient().Deploy(cmd.Context(), reference, nori.DeployOptions{
 		ValuesFile:    opts.valuesFile,
 		Values:        inlineValues,
 		WorkDir:       opts.workDir,
@@ -119,10 +100,9 @@ func runDeploy(cmd *cobra.Command, args []string, opts *deployOptions) error {
 		Upgrade:       opts.upgrade,
 	})
 	if err != nil {
-		return fmt.Errorf("deployment failed: %w", err)
+		return err
 	}
 
-	// Print result
 	fmt.Printf("\n✓ Deployment completed\n")
 	fmt.Printf("  Module:   %s\n", result.ModuleRef)
 	fmt.Printf("  WorkDir:  %s\n", result.WorkDir)
@@ -142,50 +122,6 @@ func runDeploy(cmd *cobra.Command, args []string, opts *deployOptions) error {
 	}
 
 	return nil
-}
-
-func parseValue(v string) (string, interface{}, error) {
-	for i, c := range v {
-		if c == '=' {
-			key := v[:i]
-			value := v[i+1:]
-
-			// Try to parse as bool
-			if value == "true" {
-				return key, true, nil
-			}
-			if value == "false" {
-				return key, false, nil
-			}
-
-			// Try to parse as number (simplified)
-			if isNumeric(value) {
-				// Keep as string for Terraform to parse correctly
-				return key, value, nil
-			}
-
-			return key, value, nil
-		}
-	}
-	return "", "", fmt.Errorf("invalid value format %q, expected key=value", v)
-}
-
-func isNumeric(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i, c := range s {
-		if c == '-' && i == 0 {
-			continue
-		}
-		if c == '.' {
-			continue
-		}
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func newDestroyCommand() *cobra.Command {
@@ -218,21 +154,14 @@ Examples:
 }
 
 func runDestroy(cmd *cobra.Command, args []string, opts *deployOptions) error {
-	ctx := cmd.Context()
 	workDir := args[0]
 
-	log := getLogger()
-
-	log.Info("destroying infrastructure", "workDir", workDir)
-
-	deployer := deploy.NewDeployer(getClient(), "tofu", log)
-
-	if err := deployer.Destroy(ctx, workDir, deploy.DeployOptions{
+	if err := getLibClient().Destroy(cmd.Context(), workDir, nori.DestroyOptions{
 		AutoApprove: opts.autoApprove,
 		Parallelism: opts.parallelism,
 		Targets:     opts.targets,
 	}); err != nil {
-		return fmt.Errorf("destroy failed: %w", err)
+		return err
 	}
 
 	fmt.Printf("✓ Infrastructure destroyed\n")

@@ -2,9 +2,8 @@ package commands
 
 import (
 	"fmt"
-	"os"
 
-	"github.com/eunanio/nori/internal/util"
+	nori "github.com/eunanio/nori/lib"
 	"github.com/spf13/cobra"
 )
 
@@ -42,49 +41,24 @@ Examples:
 }
 
 func runPush(cmd *cobra.Command, args []string, opts *pushOptions) error {
-	ctx := cmd.Context()
 	reference := args[0]
 	filePath := args[1]
 
-	log := getLogger()
-	log.Info("pushing artifact", "reference", reference, "file", filePath)
-
-	// Validate file exists
-	if _, err := os.Stat(filePath); err != nil {
-		return fmt.Errorf("file not found: %w", err)
-	}
-
-	// Validate archive format
-	if err := util.ValidateArchive(filePath); err != nil {
-		return fmt.Errorf("invalid archive: %w", err)
-	}
-
-	// Parse reference
-	ref, err := getClient().ParseReference(reference)
+	annotations, err := nori.ParseAnnotations(opts.annotations)
 	if err != nil {
-		return fmt.Errorf("invalid reference: %w", err)
+		return err
 	}
 
-	// Parse annotations
-	annotations := make(map[string]string)
-	for _, ann := range opts.annotations {
-		key, value, err := parseAnnotation(ann)
-		if err != nil {
-			return err
-		}
-		annotations[key] = value
-	}
-
-	// Push artifact
-	client := getClient()
-	artifact, err := client.LoadAndPushArtifact(ctx, ref, filePath, annotations)
+	result, err := getLibClient().Push(cmd.Context(), reference, filePath, nori.PushOptions{
+		Annotations: annotations,
+	})
 	if err != nil {
-		return fmt.Errorf("failed to push artifact: %w", err)
+		return err
 	}
 
 	fmt.Printf("✓ Artifact pushed successfully\n")
-	fmt.Printf("  Reference: %s\n", reference)
-	fmt.Printf("  Digest:    %s\n", artifact.Digest)
+	fmt.Printf("  Reference: %s\n", result.Reference)
+	fmt.Printf("  Digest:    %s\n", result.Digest)
 
 	return nil
 }
