@@ -3,9 +3,7 @@ package commands
 import (
 	"fmt"
 
-	"github.com/eunanio/nori/pkg/deploy"
-	"github.com/eunanio/nori/pkg/release"
-	"github.com/eunanio/nori/pkg/state"
+	nori "github.com/eunanio/nori/lib"
 	"github.com/spf13/cobra"
 )
 
@@ -59,77 +57,31 @@ Examples:
 }
 
 func runUninstall(cmd *cobra.Command, args []string, opts *uninstallOptions) error {
-	ctx := cmd.Context()
 	releaseName := args[0]
 
-	log := getLogger()
-	cfg := getConfig()
-
-	store := release.NewStore("")
-
-	// Get existing release
-	rel, err := store.Get(releaseName)
-	if err != nil {
-		return fmt.Errorf("release %q not found: %w", releaseName, err)
-	}
-
-	log.Info("destroying release", "name", releaseName, "module", rel.ModuleRef)
-
-	// Update status
-	rel.Status = release.StatusDestroying
-	if err := store.Save(rel); err != nil {
-		log.Warn("failed to update release status", "error", err)
-	}
-
-	// Create deployer
-	deployer := deploy.NewDeployer(getClient(), "tofu", log)
-
-	if opts.dryRun {
-		fmt.Printf("Dry run: would destroy release %q\n", releaseName)
-		fmt.Printf("  Module: %s\n", rel.ModuleRef)
-		fmt.Printf("  Revision: %d\n", rel.Version)
-		fmt.Printf("  WorkDir: %s\n", store.GetWorkDir(releaseName))
-		return nil
-	}
-
-	// Destroy infrastructure
-	if err := deployer.DestroyRelease(ctx, rel, store, deploy.ReleaseDeployOptions{
+	result, err := getLibClient().DestroyRelease(cmd.Context(), releaseName, nori.DestroyReleaseOptions{
 		AutoApprove: opts.autoApprove,
 		Parallelism: opts.parallelism,
 		Targets:     opts.targets,
-	}); err != nil {
-		// Update status to failed
-		rel.Status = release.StatusFailed
-		store.Save(rel)
-		return fmt.Errorf("destroy failed: %w", err)
+		KeepHistory: opts.keepHistory,
+		DryRun:      opts.dryRun,
+	})
+	if err != nil {
+		return err
 	}
 
-	// Delete release record unless keeping history
-	if !opts.keepHistory {
-		// Delete OCI state if configured
-		if stateRepo, err := cfg.GetStateRepository(); err == nil {
-			log.Info("deleting release state from OCI", "repository", stateRepo)
-			stateStore := state.NewStateStore(getClient(), log)
-			if err := stateStore.DeleteRelease(ctx, stateRepo, releaseName); err != nil {
-				log.Warn("failed to delete OCI state", "error", err)
-				fmt.Printf("WARNING: Failed to delete OCI state: %v\n", err)
-			} else {
-				log.Info("OCI state deleted successfully")
-			}
-		}
+	if result.DryRun {
+		fmt.Printf("Dry run: would destroy release %q\n", releaseName)
+		fmt.Printf("  Module: %s\n", result.ModuleRef)
+		fmt.Printf("  Revision: %d\n", result.Revision)
+		fmt.Printf("  WorkDir: %s\n", result.WorkDir)
+		return nil
+	}
 
-		// Delete local release record
-		if err := store.Delete(releaseName); err != nil {
-			return fmt.Errorf("failed to delete release record: %w", err)
-		}
-		fmt.Printf("release %q destroyed\n", releaseName)
-	} else {
-		// Mark as destroyed but keep record
-		rel.Status = release.StatusFailed // Use failed as "destroyed" state
-		if err := store.Save(rel); err != nil {
-			log.Warn("failed to update release status", "error", err)
-		}
+	if opts.keepHistory {
 		fmt.Printf("release %q resources destroyed (history kept)\n", releaseName)
+	} else {
+		fmt.Printf("release %q destroyed\n", releaseName)
 	}
 
 	return nil

@@ -2,15 +2,9 @@ package commands
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
-	"github.com/eunanio/nori/pkg/codegen"
-	"github.com/eunanio/nori/pkg/deploy"
-	"github.com/eunanio/nori/pkg/release"
-	"github.com/eunanio/nori/pkg/state"
+	nori "github.com/eunanio/nori/lib"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 type createOptions struct {
@@ -80,237 +74,113 @@ Examples:
 }
 
 func runCreate(cmd *cobra.Command, args []string, opts *createOptions) error {
-	ctx := cmd.Context()
 	releaseName := args[0]
 	moduleRef := args[1]
 
-	log := getLogger()
-	cfg := getConfig()
-
-	// Get state repository
-	stateRepo, err := cfg.GetStateRepository()
+	inlineValues, err := nori.ParseSetValues(opts.values)
 	if err != nil {
-		return fmt.Errorf("state repository not configured: %w\nRun: nori config set state_repository <oci-repo>", err)
+		return err
 	}
 
-	// Create state store
-	stateStore := state.NewStateStore(getClient(), log)
-
-	// Check if release already exists in registry state
-	exists, _ := stateStore.ReleaseExists(ctx, stateRepo, releaseName)
-	if exists {
-		return fmt.Errorf("release %q already exists. Use 'nori upgrade' to update it", releaseName)
+	annotations, err := nori.ParseAnnotations(opts.annotations)
+	if err != nil {
+		return fmt.Errorf("invalid annotation: %w", err)
 	}
 
-	log.Info("creating release", "name", releaseName, "module", moduleRef)
-
-	// Parse inline values
-	inlineValues := make(map[string]interface{})
-	for _, v := range opts.values {
-		key, value, err := parseValue(v)
-		if err != nil {
-			return err
-		}
-		inlineValues[key] = value
+	backendConfig, err := nori.ParseAnnotations(opts.backendConfig)
+	if err != nil {
+		return fmt.Errorf("invalid backend config: %w", err)
 	}
 
-	// Load values from file
-	values := make(map[string]interface{})
-	var valuesYAML []byte
-	if opts.valuesFile != "" {
-		data, err := os.ReadFile(opts.valuesFile)
-		if err != nil {
-			return fmt.Errorf("failed to read values file: %w", err)
-		}
-		if err := yaml.Unmarshal(data, &values); err != nil {
-			return fmt.Errorf("failed to parse values file: %w", err)
-		}
-		valuesYAML = data
-	}
-
-	// Merge inline values (they take precedence)
-	for k, v := range inlineValues {
-		values[k] = v
-	}
-
-	// If we have inline values, re-marshal to get the complete values YAML
-	if len(inlineValues) > 0 {
-		valuesYAML, _ = yaml.Marshal(values)
-	}
-
-	// Parse annotations
-	annotations := make(map[string]string)
-	for _, a := range opts.annotations {
-		key, value, err := parseAnnotation(a)
-		if err != nil {
-			return fmt.Errorf("invalid annotation: %w", err)
-		}
-		annotations[key] = value
-	}
-
-	// Parse backend config
-	backendConfig := make(map[string]string)
-	for _, bc := range opts.backendConfig {
-		key, value, err := parseAnnotation(bc)
-		if err != nil {
-			return fmt.Errorf("invalid backend config: %w", err)
-		}
-		backendConfig[key] = value
-	}
-
-	// Create local release for deployment
-	rel := release.NewRelease(releaseName, moduleRef)
-	rel.Values = values
-	rel.ValuesFile = opts.valuesFile
-	rel.BackendConfig = backendConfig
-	rel.Annotations = annotations
-
-	// Create local release store for deployment working directory
-	localStore := release.NewStore("")
-
-	// Save release locally as pending
-	if err := localStore.Save(rel); err != nil {
-		return fmt.Errorf("failed to save release: %w", err)
-	}
-
-	// Generate main.tf using codegen
-	mainTF := codegen.GenerateMainTF(
-		&codegen.ModuleConfig{
-			Name:   releaseName,
-			Source: moduleRef,
-			Values: values,
-		},
-		nil, // backend config is handled separately
-	)
-
-	// Write main.tf to module directory before deployment
-	moduleDir := localStore.GetModuleDir(releaseName)
-	if err := os.MkdirAll(moduleDir, 0755); err != nil {
-		return fmt.Errorf("failed to create module directory: %w", err)
-	}
-	mainTFPath := filepath.Join(moduleDir, "main.tf")
-	if err := os.WriteFile(mainTFPath, mainTF, 0644); err != nil {
-		return fmt.Errorf("failed to write main.tf: %w", err)
-	}
-	log.Debug("wrote main.tf", "path", mainTFPath)
-
-	// Create deployer
-	deployer := deploy.NewDeployer(getClient(), "tofu", log)
-
-	// Deploy
-	result, err := deployer.DeployRelease(ctx, rel, localStore, deploy.ReleaseDeployOptions{
-		AutoApprove: opts.autoApprove,
-		Parallelism: opts.parallelism,
-		VarFiles:    opts.varFiles,
-		Targets:     opts.targets,
-		PlanOnly:    opts.planOnly,
-		Upgrade:     opts.upgrade,
+	result, err := getLibClient().CreateRelease(cmd.Context(), releaseName, moduleRef, nori.CreateReleaseOptions{
+		ValuesFile:    opts.valuesFile,
+		Values:        inlineValues,
+		Annotations:   annotations,
+		AutoApprove:   opts.autoApprove,
+		Parallelism:   opts.parallelism,
+		VarFiles:      opts.varFiles,
+		BackendConfig: backendConfig,
+		Targets:       opts.targets,
+		PlanOnly:      opts.planOnly,
+		Upgrade:       opts.upgrade,
+		Description:   opts.description,
 	})
-
 	if err != nil {
-		// Update release status to failed
-		rel.Status = release.StatusFailed
-		localStore.Save(rel)
-
-		// Push failed state to registry if apply was attempted and terraform state exists
-		// This ensures resources are never left stateless after partial apply failures
-		if result != nil && result.ApplyAttempted && len(result.TFState) > 0 {
-			stateRef, pushErr := pushReleaseState(ctx, stateStore, stateRepo, PushStateParams{
-				ReleaseName: releaseName,
-				ModuleRef:   moduleRef,
-				Version:     rel.SemVer,
-				Status:      state.StatusFailed,
-				MainTF:      mainTF,
-				TFState:     result.TFState,
-				Values:      valuesYAML,
-				Description: opts.description,
-				Annotations: annotations,
-			}, log)
-			if pushErr != nil {
-				log.Warn("failed to push failed release state", "error", pushErr)
-			} else {
-				rel.StateRef = stateRef
-				localStore.Save(rel)
-				fmt.Printf("\nNOTE: Failed release state pushed to OCI for recovery: %s\n", stateRef)
-			}
-		}
-
-		return fmt.Errorf("deployment failed: %w", err)
+		return err
 	}
 
-	// Update release status
-	if result.Applied {
-		rel.Status = release.StatusDeployed
-	}
-	if err := localStore.Save(rel); err != nil {
-		log.Warn("failed to update release status", "error", err)
-	}
+	printReleaseResult(result)
+	return nil
+}
 
-	// Push state to OCI if deployment was successful
-	if !opts.planOnly && result.Applied {
-		stateRef, pushErr := pushReleaseState(ctx, stateStore, stateRepo, PushStateParams{
-			ReleaseName: releaseName,
-			ModuleRef:   moduleRef,
-			Version:     rel.SemVer,
-			Status:      state.StatusDeployed,
-			MainTF:      mainTF,
-			TFState:     result.TFState,
-			Values:      valuesYAML,
-			Description: opts.description,
-			Annotations: annotations,
-		}, log)
-		if pushErr != nil {
-			log.Warn("failed to push release state", "error", pushErr)
-			fmt.Printf("\nWARNING: Release deployed but state push failed: %v\n", pushErr)
-		} else {
-			rel.StateRef = stateRef
-			localStore.Save(rel)
-		}
-	}
-
-	// Print result
+func printReleaseResult(r *nori.ReleaseResult) {
 	fmt.Printf("\n")
-	if opts.planOnly {
-		fmt.Printf("NAME: %s\n", rel.Name)
-		fmt.Printf("STATUS: planned\n")
-		fmt.Printf("VERSION: %s\n", rel.SemVer)
-		fmt.Printf("PLAN: %s\n", result.PlanFile)
-		if !result.HasChanges {
-			fmt.Printf("\nNo changes detected. Infrastructure is up-to-date.\n")
+	if r.PlanOnly {
+		fmt.Printf("NAME: %s\n", r.Name)
+		if r.IsDriftCheck {
+			fmt.Printf("STATUS: drift check (plan only)\n")
 		} else {
-			fmt.Printf("\nTo apply this plan, run:\n")
-			fmt.Printf("  nori upgrade %s --auto-approve\n", releaseName)
+			fmt.Printf("STATUS: planned\n")
 		}
-	} else if !result.HasChanges {
-		fmt.Printf("NAME: %s\n", rel.Name)
-		fmt.Printf("STATUS: no changes\n")
-		fmt.Printf("VERSION: %s\n", rel.SemVer)
-		fmt.Printf("MODULE: %s\n", rel.ModuleRef)
-		fmt.Printf("\nNo changes detected. Infrastructure is up-to-date.\n")
+		fmt.Printf("VERSION: %s\n", r.Version)
+		if !r.HasChanges {
+			if r.IsDriftCheck {
+				fmt.Printf("\nDrift check complete. Infrastructure is in sync.\n")
+			} else {
+				fmt.Printf("\nNo changes detected. Infrastructure is up-to-date.\n")
+			}
+		} else {
+			if r.IsDriftCheck {
+				fmt.Printf("\nDrift detected. To correct drift, run:\n")
+			} else {
+				fmt.Printf("\nTo apply this plan, run:\n")
+			}
+			fmt.Printf("  nori release upgrade %s --auto-approve\n", r.Name)
+		}
+	} else if !r.HasChanges {
+		fmt.Printf("NAME: %s\n", r.Name)
+		if r.IsDriftCheck {
+			fmt.Printf("STATUS: synced\n")
+		} else {
+			fmt.Printf("STATUS: no changes\n")
+		}
+		fmt.Printf("VERSION: %s\n", r.Version)
+		fmt.Printf("MODULE: %s\n", r.ModuleRef)
+		if r.IsDriftCheck {
+			fmt.Printf("\nDrift check complete. Infrastructure is in sync.\n")
+		} else {
+			fmt.Printf("\nNo changes detected. Infrastructure is up-to-date.\n")
+		}
 	} else {
-		fmt.Printf("NAME: %s\n", rel.Name)
-		fmt.Printf("STATUS: %s\n", rel.Status)
-		fmt.Printf("VERSION: %s\n", rel.SemVer)
-		fmt.Printf("MODULE: %s\n", rel.ModuleRef)
+		fmt.Printf("NAME: %s\n", r.Name)
+		if r.IsDriftCheck {
+			fmt.Printf("STATUS: drift corrected\n")
+		} else {
+			fmt.Printf("STATUS: %s\n", r.Status)
+		}
+		fmt.Printf("VERSION: %s\n", r.Version)
+		fmt.Printf("MODULE: %s\n", r.ModuleRef)
 
-		if rel.StateRef != "" {
-			fmt.Printf("STATE: %s\n", rel.StateRef)
+		if r.StateRef != "" {
+			fmt.Printf("STATE: %s\n", r.StateRef)
 		}
 
-		if len(rel.Annotations) > 0 {
+		if len(r.Annotations) > 0 {
 			fmt.Printf("\nANNOTATIONS:\n")
-			for k, v := range rel.Annotations {
+			for k, v := range r.Annotations {
 				fmt.Printf("  %s: %s\n", k, v)
 			}
 		}
 
-		if len(result.Outputs) > 0 {
+		if len(r.Outputs) > 0 {
 			fmt.Printf("\nOUTPUTS:\n")
-			for k, v := range result.Outputs {
+			for k, v := range r.Outputs {
 				fmt.Printf("  %s: %v\n", k, v)
 			}
 		}
-	}
 
-	return nil
+		if r.IsDriftCheck {
+			fmt.Printf("\nDrift corrected. Infrastructure is now in sync.\n")
+		}
+	}
 }

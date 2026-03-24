@@ -2,16 +2,15 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 
+	nori "github.com/eunanio/nori/lib"
 	"github.com/eunanio/nori/pkg/auth"
 	"github.com/eunanio/nori/pkg/config"
 	"github.com/eunanio/nori/pkg/oci"
-	"github.com/eunanio/nori/pkg/state"
 	"github.com/spf13/cobra"
 )
 
@@ -23,10 +22,11 @@ var (
 	insecure       bool
 
 	// Runtime state
-	cfg       *config.Config
-	logger    *slog.Logger
-	ociClient *oci.Client
-	credStore *auth.CredentialStore
+	cfg        *config.Config
+	logger     *slog.Logger
+	ociClient  *oci.Client
+	credStore  *auth.CredentialStore
+	libClient  *nori.Client
 )
 
 // NewRootCommand creates the root command.
@@ -118,6 +118,17 @@ func setup(cmd *cobra.Command, args []string) error {
 		oci.WithInsecure(insecure),
 	)
 
+	// Setup lib client (reuses loaded config to avoid double-loading)
+	libClient, err = nori.NewClient(
+		nori.WithConfig(cfg),
+		nori.WithLogger(logger),
+		nori.WithInsecure(insecure),
+		nori.WithRegistryConfigPath(dockerConfigPath),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to initialize nori client: %w", err)
+	}
+
 	return nil
 }
 
@@ -163,41 +174,7 @@ func getCredStore() *auth.CredentialStore {
 	return credStore
 }
 
-// PushStateParams contains parameters for pushing release state to OCI.
-type PushStateParams struct {
-	ReleaseName string
-	ModuleRef   string
-	Version     string
-	Status      state.ReleaseStatus
-	MainTF      []byte
-	TFState     []byte
-	Values      []byte
-	Description string
-	Annotations map[string]string
-}
-
-// pushReleaseState pushes release state to OCI and returns the state reference.
-// This is a helper function used by both create and upgrade commands.
-func pushReleaseState(ctx context.Context, stateStore *state.StateStore, stateRepo string, params PushStateParams, log *slog.Logger) (string, error) {
-	releaseState := &state.ReleaseState{
-		Metadata: state.NewReleaseMetadata(params.ReleaseName, params.ModuleRef, params.Version),
-		MainTF:   params.MainTF,
-		TFState:  params.TFState,
-		Values:   params.Values,
-	}
-
-	releaseState.Metadata.Status = params.Status
-	releaseState.Metadata.Description = params.Description
-	for k, v := range params.Annotations {
-		releaseState.Metadata.SetAnnotation(k, v)
-	}
-
-	stateRef := fmt.Sprintf("%s:%s", stateRepo, state.FormatReleaseTag(params.ReleaseName, params.Version))
-
-	if err := stateStore.PushState(ctx, stateRef, releaseState); err != nil {
-		return "", fmt.Errorf("failed to push release state: %w", err)
-	}
-
-	log.Info("release state pushed successfully", "reference", stateRef, "status", params.Status)
-	return stateRef, nil
+// getLibClient returns the nori library client.
+func getLibClient() *nori.Client {
+	return libClient
 }

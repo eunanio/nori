@@ -30,16 +30,10 @@ Examples:
 func runLogout(cmd *cobra.Command, args []string) error {
 	registry := args[0]
 
-	log := getLogger()
-	log.Info("logging out from registry", "registry", registry)
-
-	// Remove credentials
-	credStore := getCredStore()
-	if err := credStore.RemoveCredentials(registry); err != nil {
-		return fmt.Errorf("failed to remove credentials: %w", err)
+	if err := getLibClient().Logout(cmd.Context(), registry); err != nil {
+		return err
 	}
 
 	fmt.Printf("✓ Logged out from %s\n", registry)
 	return nil
 }
-

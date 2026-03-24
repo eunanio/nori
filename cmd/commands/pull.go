@@ -2,9 +2,8 @@ package commands
 
 import (
 	"fmt"
-	"path/filepath"
 
-	"github.com/eunanio/nori/pkg/oci"
+	nori "github.com/eunanio/nori/lib"
 	"github.com/spf13/cobra"
 )
 
@@ -44,40 +43,18 @@ Examples:
 }
 
 func runPull(cmd *cobra.Command, args []string, opts *pullOptions) error {
-	ctx := cmd.Context()
 	reference := args[0]
 
-	log := getLogger()
-	log.Info("pulling module", "reference", reference)
-
-	// Parse reference
-	ref, err := getClient().ParseReference(reference)
+	result, err := getLibClient().Pull(cmd.Context(), reference, nori.PullOptions{
+		OutputPath: opts.output,
+	})
 	if err != nil {
-		return fmt.Errorf("invalid reference: %w", err)
-	}
-
-	// Determine output path
-	outputPath := opts.output
-	if outputPath == "" {
-		repo := oci.RepositoryFromRef(ref)
-		tag := oci.TagFromRef(ref)
-		if tag == "" {
-			tag = "latest"
-		}
-		// Use repository name as base filename
-		repoName := filepath.Base(repo)
-		outputPath = fmt.Sprintf("%s-%s.tar.gz", repoName, tag)
-	}
-
-	// Pull and save
-	client := getClient()
-	if err := client.SaveArtifact(ctx, ref, outputPath); err != nil {
-		return fmt.Errorf("failed to pull module: %w", err)
+		return err
 	}
 
 	fmt.Printf("✓ Module pulled successfully\n")
-	fmt.Printf("  Reference: %s\n", reference)
-	fmt.Printf("  Output:    %s\n", outputPath)
+	fmt.Printf("  Reference: %s\n", result.Reference)
+	fmt.Printf("  Output:    %s\n", result.OutputPath)
 
 	return nil
 }
